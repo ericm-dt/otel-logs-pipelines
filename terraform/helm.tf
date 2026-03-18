@@ -3,7 +3,7 @@ resource "kubernetes_namespace" "otel_demo" {
     name = var.otel_demo_namespace
   }
 
-  depends_on = [google_container_node_pool.primary_nodes]
+  depends_on = [aws_eks_node_group.primary]
 }
 
 resource "helm_release" "otel_demo" {
@@ -17,5 +17,5 @@ resource "helm_release" "otel_demo" {
   wait    = true
   timeout = 600
 
-  depends_on = [google_container_node_pool.primary_nodes]
+  depends_on = [aws_eks_node_group.primary]
 }
