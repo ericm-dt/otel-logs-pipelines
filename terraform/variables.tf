@@ -1,30 +1,31 @@
-variable "project_id" {
-  description = "The GCP project ID in which to create resources."
-  type        = string
-}
-
 variable "region" {
-  description = "The GCP region in which to create resources."
+  description = "The AWS region in which to create resources."
   type        = string
-  default     = "us-central1"
+  default     = "us-east-1"
 }
 
 variable "cluster_name" {
-  description = "The name of the GKE cluster."
+  description = "The name of the EKS cluster."
   type        = string
   default     = "otel-demo-cluster"
 }
 
+variable "kubernetes_version" {
+  description = "The Kubernetes version for the EKS cluster."
+  type        = string
+  default     = "1.29"
+}
+
 variable "node_count" {
-  description = "The number of nodes per zone in the default node pool. For a regional cluster spanning 3 zones, the total node count will be node_count * 3."
+  description = "The desired number of worker nodes in the managed node group."
   type        = number
   default     = 2
 }
 
-variable "machine_type" {
-  description = "The GCE machine type to use for cluster nodes."
+variable "instance_type" {
+  description = "The EC2 instance type to use for cluster nodes."
   type        = string
-  default     = "e2-standard-4"
+  default     = "t3.medium"
 }
 
 variable "disk_size_gb" {

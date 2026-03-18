@@ -2,8 +2,8 @@ terraform {
   required_version = ">= 1.5.0"
 
   required_providers {
-    google = {
-      source  = "hashicorp/google"
+    aws = {
+      source  = "hashicorp/aws"
       version = "~> 5.0"
     }
     kubernetes = {
@@ -17,23 +17,22 @@ terraform {
   }
 }
 
-provider "google" {
-  project = var.project_id
-  region  = var.region
+provider "aws" {
+  region = var.region
 }
 
 # These providers are configured after the cluster is created, using the
-# cluster's endpoint and CA certificate from the google_container_cluster data.
+# cluster's endpoint and CA certificate from the aws_eks_cluster resource.
 provider "kubernetes" {
-  host                   = "https://${google_container_cluster.primary.endpoint}"
-  token                  = data.google_client_config.default.access_token
-  cluster_ca_certificate = base64decode(google_container_cluster.primary.master_auth[0].cluster_ca_certificate)
+  host                   = aws_eks_cluster.primary.endpoint
+  token                  = data.aws_eks_cluster_auth.primary.token
+  cluster_ca_certificate = base64decode(aws_eks_cluster.primary.certificate_authority[0].data)
 }
 
 provider "helm" {
   kubernetes {
-    host                   = "https://${google_container_cluster.primary.endpoint}"
-    token                  = data.google_client_config.default.access_token
-    cluster_ca_certificate = base64decode(google_container_cluster.primary.master_auth[0].cluster_ca_certificate)
+    host                   = aws_eks_cluster.primary.endpoint
+    token                  = data.aws_eks_cluster_auth.primary.token
+    cluster_ca_certificate = base64decode(aws_eks_cluster.primary.certificate_authority[0].data)
   }
 }
