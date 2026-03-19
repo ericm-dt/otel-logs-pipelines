@@ -34,28 +34,69 @@ deploy_otel_demo = false
 
 # OTel demo Helm release
 otel_demo_namespace     = "otel-demo"
-otel_demo_chart_version = "0.33.0"
+otel_demo_chart_version = "0.40.5"
 
 # Optional collector customization
-# Add environment variables to the collector container.
+# Add non-sensitive environment variables to the collector container.
+# Sensitive credentials (DT_TENANT_URL, DT_API_TOKEN) are managed separately below.
 otel_collector_env = {
+  OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE = "delta"
   # EXAMPLE_ENV = "value"
 }
 
+# Dynatrace credentials — these are stored as a Kubernetes secret at deploy
+# time and never appear in Helm values or plan output.
+# Required when deploy_otel_demo = true and using the Dynatrace exporter.
+dt_tenant_url = "https://<your-environment-id>.live.dynatrace.com"
+
+# api token needs the following permissions:
+# - Ingest OpenTelemetry traces (openTelemetryTrace.ingest)
+# - Ingest metrics (metrics.ingest)
+# - Ingest logs (logs.ingest) 
+dt_api_token  = "dt0c01.<your-api-token>"
+
 # Add/override collector config (similar to cotelcol-config-extras.yml).
 otel_collector_config = {
-  # exporters = {
-  #   otlphttp = {
-  #     endpoint = "https://your-collector-endpoint"
-  #   }
-  # }
-  # service = {
-  #   pipelines = {
-  #     traces = {
-  #       receivers  = ["otlp"]
-  #       processors = ["batch"]
-  #       exporters  = ["otlphttp"]
-  #     }
-  #   }
-  # }
+  # Full collector config override for Dynatrace via OTLP/HTTP exporter.
+  receivers = {
+    otlp = {
+      protocols = {
+        grpc = {}
+        http = {}
+      }
+    }
+  }
+
+  processors = {
+    batch = {}
+  }
+
+  exporters = {
+    otlphttp/dynatrace = {
+      endpoint = "${env:DT_TENANT_URL}/api/v2/otlp"
+      headers = {
+        Authorization = "Api-Token ${env:DT_API_TOKEN}"
+      }
+    }
+  }
+
+  service = {
+    pipelines = {
+      traces = {
+        receivers  = ["otlp"]
+        processors = ["batch"]
+        exporters  = ["otlphttp/dynatrace"]
+      }
+      metrics = {
+        receivers  = ["otlp"]
+        processors = ["batch"]
+        exporters  = ["otlphttp/dynatrace"]
+      }
+      logs = {
+        receivers  = ["otlp"]
+        processors = ["batch"]
+        exporters  = ["otlphttp/dynatrace"]
+      }
+    }
+  }
 }
