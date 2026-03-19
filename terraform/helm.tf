@@ -43,6 +43,23 @@ resource "helm_release" "otel_demo" {
     yamlencode({
       "opentelemetry-collector" = merge(
         {
+          # Enable standard collector presets for host and Kubernetes metrics.
+          # These presets add the required receivers, processors, and RBAC.
+          presets = {
+            hostMetrics = {
+              enabled = true
+            }
+            kubernetesAttributes = {
+              enabled = true
+            }
+            kubeletMetrics = {
+              enabled = true
+            }
+            clusterMetrics = {
+              enabled = true
+            }
+          }
+
           config = {
             receivers = {
               otlp = {
