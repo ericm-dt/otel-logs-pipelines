@@ -68,6 +68,20 @@ otel_collector_config = {
   }
 
   processors = {
+    "attributes/log_static_kv" = {
+      actions = [
+        {
+          key    = "observability.shipper.name"
+          action = "upsert"
+          value  = "otel-collector-oss"
+        },
+        {
+          key    = "observability.shipper.version"
+          action = "upsert"
+          value  = "0.142.0"
+        }
+      ]
+    }
     batch = {}
   }
 
@@ -94,7 +108,7 @@ otel_collector_config = {
       }
       logs = {
         receivers  = ["otlp"]
-        processors = ["batch"]
+        processors = ["attributes/log_static_kv", "batch"]
         exporters  = ["otlphttp/dynatrace"]
       }
     }
