@@ -202,6 +202,10 @@ resource "aws_eks_cluster" "primary" {
   version  = var.kubernetes_version
   role_arn = aws_iam_role.cluster.arn
 
+  upgrade_policy {
+    support_type = "STANDARD"
+  }
+
   vpc_config {
     subnet_ids              = local.subnet_ids
     endpoint_private_access = true
