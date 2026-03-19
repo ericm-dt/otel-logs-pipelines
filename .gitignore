@@ -16,6 +16,10 @@ crash.*.log
 *.tfvars
 *.tfvars.json
 
+# Exclude backend config with real values, but allow the example template
+backend.tfvars
+!backend.tfvars.example
+
 # Ignore override files as they are usually used to override resources locally and so
 # are not checked in
 override.tf
