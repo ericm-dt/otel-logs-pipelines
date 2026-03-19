@@ -21,6 +21,6 @@ output "kubeconfig_command" {
 }
 
 output "otel_demo_namespace" {
-  description = "The Kubernetes namespace containing the OTel demo deployment."
-  value       = kubernetes_namespace.otel_demo.metadata[0].name
+  description = "The Kubernetes namespace containing the OTel demo deployment (only output if deployed)."
+  value       = var.deploy_otel_demo ? kubernetes_namespace.otel_demo[0].metadata[0].name : null
 }
