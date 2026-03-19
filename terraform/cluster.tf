@@ -63,7 +63,7 @@ locals {
     aws_subnet.private[*].id
   ) : slice(data.aws_subnets.existing[0].ids, 0, 2)
 
-  node_subnet_ids = local.create_project_subnets ? aws_subnet.private[*].id : slice(data.aws_subnets.existing[0].ids, 0, 2)
+  node_subnet_ids = local.create_project_subnets ? aws_subnet.public[*].id : slice(data.aws_subnets.existing[0].ids, 0, 2)
   internet_gateway_id = local.create_project_subnets ? (
     local.create_custom_vpc ? aws_internet_gateway.main[0].id : data.aws_internet_gateway.existing[0].id
   ) : null
@@ -119,13 +119,14 @@ resource "aws_subnet" "private" {
 }
 
 # NAT gateway (single, in first public subnet) so private nodes can reach the internet.
+# Only created when deploying to a custom VPC.
 resource "aws_eip" "nat" {
-  count  = local.create_project_subnets ? 1 : 0
+  count  = local.create_custom_vpc ? 1 : 0
   domain = "vpc"
 }
 
 resource "aws_nat_gateway" "main" {
-  count         = local.create_project_subnets ? 1 : 0
+  count         = local.create_custom_vpc ? 1 : 0
   allocation_id = aws_eip.nat[0].id
   subnet_id     = aws_subnet.public[0].id
 
@@ -152,9 +153,9 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public[0].id
 }
 
-# Route table for private subnets (egress via NAT).
+# Route table for private subnets (egress via NAT). Only for custom VPC.
 resource "aws_route_table" "private" {
-  count  = local.create_project_subnets ? 1 : 0
+  count  = local.create_custom_vpc ? 1 : 0
   vpc_id = local.vpc_id
 
   route {
@@ -166,7 +167,7 @@ resource "aws_route_table" "private" {
 }
 
 resource "aws_route_table_association" "private" {
-  count          = local.create_project_subnets ? length(aws_subnet.private) : 0
+  count          = local.create_custom_vpc ? length(aws_subnet.private) : 0
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private[0].id
 }
