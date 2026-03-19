@@ -29,6 +29,9 @@ existing_vpc_id      = null
 public_subnet_cidrs  = null
 private_subnet_cidrs = null
 
+# whether or not to deploy the k8s resources
+deploy_otel_demo = false
+
 # OTel demo Helm release
 otel_demo_namespace     = "otel-demo"
 otel_demo_chart_version = "0.33.0"

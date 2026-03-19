@@ -172,52 +172,6 @@ resource "aws_route_table_association" "private" {
 }
 
 # ---------------------------------------------------------------------------
-# Security Groups for isolation (used in default VPC and custom VPC)
-# ---------------------------------------------------------------------------
-
-# Security group for EKS control plane
-resource "aws_security_group" "cluster" {
-  name        = "${var.cluster_name}-cluster-sg"
-  description = "Security group for ${var.cluster_name} EKS cluster control plane"
-  vpc_id      = local.vpc_id
-
-  tags = { Name = "${var.cluster_name}-cluster-sg" }
-}
-
-# Security group for worker nodes
-resource "aws_security_group" "nodes" {
-  name        = "${var.cluster_name}-nodes-sg"
-  description = "Security group for ${var.cluster_name} EKS worker nodes"
-  vpc_id      = local.vpc_id
-
-  ingress {
-    from_port       = 0
-    to_port         = 65535
-    protocol        = "tcp"
-    security_groups = [aws_security_group.cluster.id]
-    description     = "Allow traffic from cluster control plane"
-  }
-
-  ingress {
-    from_port       = 0
-    to_port         = 65535
-    protocol        = "tcp"
-    self            = true
-    description     = "Allow node to node communication"
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound traffic"
-  }
-
-  tags = { Name = "${var.cluster_name}-nodes-sg" }
-}
-
-# ---------------------------------------------------------------------------
 # IAM – EKS cluster role
 # ---------------------------------------------------------------------------
 
@@ -250,7 +204,6 @@ resource "aws_eks_cluster" "primary" {
 
   vpc_config {
     subnet_ids              = local.subnet_ids
-    security_group_ids      = [aws_security_group.cluster.id]
     endpoint_private_access = true
     endpoint_public_access  = true
   }
@@ -296,7 +249,6 @@ resource "aws_iam_role_policy_attachment" "nodes_ecr_policy" {
 
 resource "aws_eks_node_group" "primary" {
   cluster_name    = aws_eks_cluster.primary.name
-  node_group_name = "${var.cluster_name}-node-group"
   node_role_arn   = aws_iam_role.nodes.arn
   subnet_ids      = local.node_subnet_ids
   instance_types  = [var.instance_type]

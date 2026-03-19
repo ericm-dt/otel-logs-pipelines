@@ -1,4 +1,6 @@
 resource "kubernetes_namespace" "otel_demo" {
+  count = var.deploy_otel_demo ? 1 : 0
+  
   metadata {
     name = var.otel_demo_namespace
   }
@@ -7,11 +9,12 @@ resource "kubernetes_namespace" "otel_demo" {
 }
 
 resource "helm_release" "otel_demo" {
+  count = var.deploy_otel_demo ? 1 : 0
   name       = "otel-demo"
   repository = "https://open-telemetry.github.io/opentelemetry-helm-charts"
   chart      = "opentelemetry-demo"
   version    = var.otel_demo_chart_version
-  namespace  = kubernetes_namespace.otel_demo.metadata[0].name
+  namespace  = kubernetes_namespace.otel_demo[0].metadata[0].name
 
   # Merge custom collector configuration with defaults
   values = [

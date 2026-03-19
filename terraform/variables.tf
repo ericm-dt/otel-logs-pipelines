@@ -81,3 +81,9 @@ variable "otel_collector_env" {
   type        = map(string)
   default     = {}
 }
+
+variable "deploy_otel_demo" {
+  description = "Whether to deploy the OpenTelemetry demo Helm chart. Set to false to deploy only infrastructure."
+  type        = bool
+  default     = false
+}
