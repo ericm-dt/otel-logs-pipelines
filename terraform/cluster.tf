@@ -8,29 +8,65 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
-# Data sources for default VPC (used when vpc_cidr is not provided)
+# Data sources for selecting existing/default VPCs.
 data "aws_vpc" "default" {
-  count   = var.vpc_cidr != null ? 0 : 1
+  count   = var.vpc_cidr == null && var.existing_vpc_id == null ? 1 : 0
   default = true
 }
 
-data "aws_subnets" "default" {
-  count  = var.vpc_cidr != null ? 0 : 1
+data "aws_vpc" "selected" {
+  count = var.existing_vpc_id != null ? 1 : 0
+  id    = var.existing_vpc_id
+}
+
+# Local to simplify subnet and VPC selection logic.
+locals {
+  create_custom_vpc = var.vpc_cidr != null
+  use_existing_vpc  = !local.create_custom_vpc
+  create_project_subnets = local.create_custom_vpc || (
+    var.public_subnet_cidrs != null && var.private_subnet_cidrs != null
+  )
+
+  vpc_id = local.create_custom_vpc ? aws_vpc.main[0].id : (
+    var.existing_vpc_id != null ? data.aws_vpc.selected[0].id : data.aws_vpc.default[0].id
+  )
+
+  effective_public_subnet_cidrs = var.public_subnet_cidrs != null ? var.public_subnet_cidrs : (
+    local.create_custom_vpc ? [cidrsubnet(var.vpc_cidr, 8, 0), cidrsubnet(var.vpc_cidr, 8, 1)] : []
+  )
+  effective_private_subnet_cidrs = var.private_subnet_cidrs != null ? var.private_subnet_cidrs : (
+    local.create_custom_vpc ? [cidrsubnet(var.vpc_cidr, 8, 10), cidrsubnet(var.vpc_cidr, 8, 11)] : []
+  )
+}
+
+# Existing subnets are used only when dedicated project subnets are not requested.
+data "aws_subnets" "existing" {
+  count = local.use_existing_vpc && !local.create_project_subnets ? 1 : 0
   filter {
     name   = "vpc-id"
-    values = [data.aws_vpc.default[0].id]
+    values = [local.vpc_id]
   }
 }
 
-# Local to simplify subnet selection logic
+# Discover the existing IGW for the selected VPC when using existing/default VPC.
+data "aws_internet_gateway" "existing" {
+  count = local.use_existing_vpc && local.create_project_subnets ? 1 : 0
+  filter {
+    name   = "attachment.vpc-id"
+    values = [local.vpc_id]
+  }
+}
+
 locals {
-  create_custom_vpc = var.vpc_cidr != null
-  vpc_id = local.create_custom_vpc ? aws_vpc.main[0].id : data.aws_vpc.default[0].id
-  subnet_ids = local.create_custom_vpc ? concat(
+  subnet_ids = local.create_project_subnets ? concat(
     aws_subnet.public[*].id,
     aws_subnet.private[*].id
-  ) : slice(data.aws_subnets.default[0].ids, 0, 2) # Use first 2 default subnets
-  node_subnet_ids = local.create_custom_vpc ? aws_subnet.private[*].id : slice(data.aws_subnets.default[0].ids, 0, 2)
+  ) : slice(data.aws_subnets.existing[0].ids, 0, 2)
+
+  node_subnet_ids = local.create_project_subnets ? aws_subnet.private[*].id : slice(data.aws_subnets.existing[0].ids, 0, 2)
+  internet_gateway_id = local.create_project_subnets ? (
+    local.create_custom_vpc ? aws_internet_gateway.main[0].id : data.aws_internet_gateway.existing[0].id
+  ) : null
 }
 
 # ---------------------------------------------------------------------------
@@ -55,9 +91,9 @@ resource "aws_internet_gateway" "main" {
 
 # Public subnets – used by load balancers and the NAT gateway.
 resource "aws_subnet" "public" {
-  count                   = local.create_custom_vpc ? length(var.public_subnet_cidrs) : 0
-  vpc_id                  = aws_vpc.main[0].id
-  cidr_block              = var.public_subnet_cidrs[count.index]
+  count                   = local.create_project_subnets ? length(local.effective_public_subnet_cidrs) : 0
+  vpc_id                  = local.vpc_id
+  cidr_block              = local.effective_public_subnet_cidrs[count.index]
   availability_zone       = data.aws_availability_zones.available.names[count.index % length(data.aws_availability_zones.available.names)]
   map_public_ip_on_launch = true
 
@@ -70,9 +106,9 @@ resource "aws_subnet" "public" {
 
 # Private subnets – used by worker nodes.
 resource "aws_subnet" "private" {
-  count             = local.create_custom_vpc ? length(var.private_subnet_cidrs) : 0
-  vpc_id            = aws_vpc.main[0].id
-  cidr_block        = var.private_subnet_cidrs[count.index]
+  count             = local.create_project_subnets ? length(local.effective_private_subnet_cidrs) : 0
+  vpc_id            = local.vpc_id
+  cidr_block        = local.effective_private_subnet_cidrs[count.index]
   availability_zone = data.aws_availability_zones.available.names[count.index % length(data.aws_availability_zones.available.names)]
 
   tags = {
@@ -84,43 +120,42 @@ resource "aws_subnet" "private" {
 
 # NAT gateway (single, in first public subnet) so private nodes can reach the internet.
 resource "aws_eip" "nat" {
-  count  = local.create_custom_vpc ? 1 : 0
+  count  = local.create_project_subnets ? 1 : 0
   domain = "vpc"
 }
 
 resource "aws_nat_gateway" "main" {
-  count         = local.create_custom_vpc ? 1 : 0
+  count         = local.create_project_subnets ? 1 : 0
   allocation_id = aws_eip.nat[0].id
   subnet_id     = aws_subnet.public[0].id
 
   tags = { Name = var.cluster_name }
 
-  depends_on = [aws_internet_gateway.main]
 }
 
 # Route table for public subnets.
 resource "aws_route_table" "public" {
-  count  = local.create_custom_vpc ? 1 : 0
-  vpc_id = aws_vpc.main[0].id
+  count  = local.create_project_subnets ? 1 : 0
+  vpc_id = local.vpc_id
 
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main[0].id
+    gateway_id = local.internet_gateway_id
   }
 
   tags = { Name = "${var.cluster_name}-public" }
 }
 
 resource "aws_route_table_association" "public" {
-  count          = local.create_custom_vpc ? length(aws_subnet.public) : 0
+  count          = local.create_project_subnets ? length(aws_subnet.public) : 0
   subnet_id      = aws_subnet.public[count.index].id
   route_table_id = aws_route_table.public[0].id
 }
 
 # Route table for private subnets (egress via NAT).
 resource "aws_route_table" "private" {
-  count  = local.create_custom_vpc ? 1 : 0
-  vpc_id = aws_vpc.main[0].id
+  count  = local.create_project_subnets ? 1 : 0
+  vpc_id = local.vpc_id
 
   route {
     cidr_block     = "0.0.0.0/0"
@@ -131,7 +166,7 @@ resource "aws_route_table" "private" {
 }
 
 resource "aws_route_table_association" "private" {
-  count          = local.create_custom_vpc ? length(aws_subnet.private) : 0
+  count          = local.create_project_subnets ? length(aws_subnet.private) : 0
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private[0].id
 }
@@ -215,7 +250,7 @@ resource "aws_eks_cluster" "primary" {
 
   vpc_config {
     subnet_ids              = local.subnet_ids
-    security_groups         = [aws_security_group.cluster.id]
+    security_group_ids      = [aws_security_group.cluster.id]
     endpoint_private_access = true
     endpoint_public_access  = true
   }
@@ -266,11 +301,6 @@ resource "aws_eks_node_group" "primary" {
   subnet_ids      = local.node_subnet_ids
   instance_types  = [var.instance_type]
   disk_size       = var.disk_size_gb
-
-  # Apply security group for nodes
-  vpc_config {
-    security_groups = [aws_security_group.nodes.id]
-  }
 
   scaling_config {
     desired_size = var.node_count
