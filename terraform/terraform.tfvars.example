@@ -4,7 +4,7 @@
 # AWS / Cluster
 region             = "us-east-1"
 cluster_name       = "otel-demo-cluster"
-kubernetes_version = "1.29"
+kubernetes_version = "1.32"
 
 # Node group sizing
 node_count    = 2
