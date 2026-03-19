@@ -7,8 +7,8 @@ cluster_name       = "otel-demo-cluster"
 kubernetes_version = "1.32"
 
 # Node group sizing
-node_count    = 2
-instance_type = "t3.medium"
+node_count    = 3
+instance_type = "t3.large"
 disk_size_gb  = 50
 
 # Networking
@@ -72,10 +72,10 @@ otel_collector_config = {
   }
 
   exporters = {
-    otlphttp/dynatrace = {
-      endpoint = "${env:DT_TENANT_URL}/api/v2/otlp"
+    "otlphttp/dynatrace" = {
+      endpoint = "$${env:DT_TENANT_URL}/api/v2/otlp"
       headers = {
-        Authorization = "Api-Token ${env:DT_API_TOKEN}"
+        Authorization = "Api-Token $${env:DT_API_TOKEN}"
       }
     }
   }
