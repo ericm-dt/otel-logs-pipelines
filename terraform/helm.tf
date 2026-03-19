@@ -114,6 +114,19 @@ resource "helm_release" "otel_demo" {
         },
         { config = var.otel_collector_config }
       )
+
+      components = {
+        accounting = {
+          resources = {
+            requests = {
+              memory = "128Mi"
+            }
+            limits = {
+              memory = "256Mi"
+            }
+          }
+        }
+      }
     })
   ]
 
