@@ -8,12 +8,38 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
+# Data sources for default VPC (used when vpc_cidr is not provided)
+data "aws_vpc" "default" {
+  count   = var.vpc_cidr != null ? 0 : 1
+  default = true
+}
+
+data "aws_subnets" "default" {
+  count  = var.vpc_cidr != null ? 0 : 1
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default[0].id]
+  }
+}
+
+# Local to simplify subnet selection logic
+locals {
+  create_custom_vpc = var.vpc_cidr != null
+  vpc_id = local.create_custom_vpc ? aws_vpc.main[0].id : data.aws_vpc.default[0].id
+  subnet_ids = local.create_custom_vpc ? concat(
+    aws_subnet.public[*].id,
+    aws_subnet.private[*].id
+  ) : slice(data.aws_subnets.default[0].ids, 0, 2) # Use first 2 default subnets
+  node_subnet_ids = local.create_custom_vpc ? aws_subnet.private[*].id : slice(data.aws_subnets.default[0].ids, 0, 2)
+}
+
 # ---------------------------------------------------------------------------
-# VPC
+# VPC – Optional custom VPC
 # ---------------------------------------------------------------------------
 
 resource "aws_vpc" "main" {
-  cidr_block           = "10.0.0.0/16"
+  count                = local.create_custom_vpc ? 1 : 0
+  cidr_block           = var.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
 
@@ -21,17 +47,18 @@ resource "aws_vpc" "main" {
 }
 
 resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
+  count  = local.create_custom_vpc ? 1 : 0
+  vpc_id = aws_vpc.main[0].id
 
   tags = { Name = var.cluster_name }
 }
 
 # Public subnets – used by load balancers and the NAT gateway.
 resource "aws_subnet" "public" {
-  count                   = 2
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = cidrsubnet("10.0.0.0/16", 8, count.index)
-  availability_zone       = data.aws_availability_zones.available.names[count.index]
+  count                   = local.create_custom_vpc ? length(var.public_subnet_cidrs) : 0
+  vpc_id                  = aws_vpc.main[0].id
+  cidr_block              = var.public_subnet_cidrs[count.index]
+  availability_zone       = data.aws_availability_zones.available.names[count.index % length(data.aws_availability_zones.available.names)]
   map_public_ip_on_launch = true
 
   tags = {
@@ -43,10 +70,10 @@ resource "aws_subnet" "public" {
 
 # Private subnets – used by worker nodes.
 resource "aws_subnet" "private" {
-  count             = 2
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = cidrsubnet("10.0.0.0/16", 8, count.index + 10)
-  availability_zone = data.aws_availability_zones.available.names[count.index]
+  count             = local.create_custom_vpc ? length(var.private_subnet_cidrs) : 0
+  vpc_id            = aws_vpc.main[0].id
+  cidr_block        = var.private_subnet_cidrs[count.index]
+  availability_zone = data.aws_availability_zones.available.names[count.index % length(data.aws_availability_zones.available.names)]
 
   tags = {
     Name                                        = "${var.cluster_name}-private-${count.index}"
@@ -57,11 +84,13 @@ resource "aws_subnet" "private" {
 
 # NAT gateway (single, in first public subnet) so private nodes can reach the internet.
 resource "aws_eip" "nat" {
+  count  = local.create_custom_vpc ? 1 : 0
   domain = "vpc"
 }
 
 resource "aws_nat_gateway" "main" {
-  allocation_id = aws_eip.nat.id
+  count         = local.create_custom_vpc ? 1 : 0
+  allocation_id = aws_eip.nat[0].id
   subnet_id     = aws_subnet.public[0].id
 
   tags = { Name = var.cluster_name }
@@ -71,38 +100,86 @@ resource "aws_nat_gateway" "main" {
 
 # Route table for public subnets.
 resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
+  count  = local.create_custom_vpc ? 1 : 0
+  vpc_id = aws_vpc.main[0].id
 
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
+    gateway_id = aws_internet_gateway.main[0].id
   }
 
   tags = { Name = "${var.cluster_name}-public" }
 }
 
 resource "aws_route_table_association" "public" {
-  count          = 2
+  count          = local.create_custom_vpc ? length(aws_subnet.public) : 0
   subnet_id      = aws_subnet.public[count.index].id
-  route_table_id = aws_route_table.public.id
+  route_table_id = aws_route_table.public[0].id
 }
 
 # Route table for private subnets (egress via NAT).
 resource "aws_route_table" "private" {
-  vpc_id = aws_vpc.main.id
+  count  = local.create_custom_vpc ? 1 : 0
+  vpc_id = aws_vpc.main[0].id
 
   route {
     cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.main.id
+    nat_gateway_id = aws_nat_gateway.main[0].id
   }
 
   tags = { Name = "${var.cluster_name}-private" }
 }
 
 resource "aws_route_table_association" "private" {
-  count          = 2
+  count          = local.create_custom_vpc ? length(aws_subnet.private) : 0
   subnet_id      = aws_subnet.private[count.index].id
-  route_table_id = aws_route_table.private.id
+  route_table_id = aws_route_table.private[0].id
+}
+
+# ---------------------------------------------------------------------------
+# Security Groups for isolation (used in default VPC and custom VPC)
+# ---------------------------------------------------------------------------
+
+# Security group for EKS control plane
+resource "aws_security_group" "cluster" {
+  name        = "${var.cluster_name}-cluster-sg"
+  description = "Security group for ${var.cluster_name} EKS cluster control plane"
+  vpc_id      = local.vpc_id
+
+  tags = { Name = "${var.cluster_name}-cluster-sg" }
+}
+
+# Security group for worker nodes
+resource "aws_security_group" "nodes" {
+  name        = "${var.cluster_name}-nodes-sg"
+  description = "Security group for ${var.cluster_name} EKS worker nodes"
+  vpc_id      = local.vpc_id
+
+  ingress {
+    from_port       = 0
+    to_port         = 65535
+    protocol        = "tcp"
+    security_groups = [aws_security_group.cluster.id]
+    description     = "Allow traffic from cluster control plane"
+  }
+
+  ingress {
+    from_port       = 0
+    to_port         = 65535
+    protocol        = "tcp"
+    self            = true
+    description     = "Allow node to node communication"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound traffic"
+  }
+
+  tags = { Name = "${var.cluster_name}-nodes-sg" }
 }
 
 # ---------------------------------------------------------------------------
@@ -137,7 +214,10 @@ resource "aws_eks_cluster" "primary" {
   role_arn = aws_iam_role.cluster.arn
 
   vpc_config {
-    subnet_ids = concat(aws_subnet.public[*].id, aws_subnet.private[*].id)
+    subnet_ids              = local.subnet_ids
+    security_groups         = [aws_security_group.cluster.id]
+    endpoint_private_access = true
+    endpoint_public_access  = true
   }
 
   depends_on = [aws_iam_role_policy_attachment.cluster_policy]
@@ -183,9 +263,14 @@ resource "aws_eks_node_group" "primary" {
   cluster_name    = aws_eks_cluster.primary.name
   node_group_name = "${var.cluster_name}-node-group"
   node_role_arn   = aws_iam_role.nodes.arn
-  subnet_ids      = aws_subnet.private[*].id
+  subnet_ids      = local.node_subnet_ids
   instance_types  = [var.instance_type]
   disk_size       = var.disk_size_gb
+
+  # Apply security group for nodes
+  vpc_config {
+    security_groups = [aws_security_group.nodes.id]
+  }
 
   scaling_config {
     desired_size = var.node_count

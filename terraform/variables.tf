@@ -4,6 +4,24 @@ variable "region" {
   default     = "us-east-1"
 }
 
+variable "vpc_cidr" {
+  description = "CIDR block for the VPC. If not provided, uses the default VPC."
+  type        = string
+  default     = null
+}
+
+variable "public_subnet_cidrs" {
+  description = "CIDR blocks for public subnets. Only used if vpc_cidr is provided."
+  type        = list(string)
+  default     = null
+}
+
+variable "private_subnet_cidrs" {
+  description = "CIDR blocks for private subnets. Only used if vpc_cidr is provided."
+  type        = list(string)
+  default     = null
+}
+
 variable "cluster_name" {
   description = "The name of the EKS cluster."
   type        = string
@@ -44,4 +62,16 @@ variable "otel_demo_chart_version" {
   description = "The version of the opentelemetry-demo Helm chart to deploy."
   type        = string
   default     = "0.33.0"
+}
+
+variable "otel_collector_config" {
+  description = "OpenTelemetry collector configuration (receivers, processors, exporters, service pipelines). Merged with Helm chart defaults."
+  type        = any
+  default     = {}
+}
+
+variable "otel_collector_env" {
+  description = "Environment variables to set on the OpenTelemetry collector container."
+  type        = map(string)
+  default     = {}
 }

@@ -1,0 +1,13 @@
+# S3 Backend Configuration - Copy this file to backend.tfvars and fill in with your values
+
+# S3 bucket name for storing Terraform state
+bucket = "my-terraform-state-bucket"
+
+# Path within the S3 bucket where state will be stored
+key = "otel-logs-pipeline/terraform.tfstate"
+
+# AWS region where the S3 bucket is located
+region = "us-east-1"
+
+# Enable server-side encryption at rest for the state file
+encrypt = true
