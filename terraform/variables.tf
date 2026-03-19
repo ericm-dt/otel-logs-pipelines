@@ -10,14 +10,20 @@ variable "vpc_cidr" {
   default     = null
 }
 
+variable "existing_vpc_id" {
+  description = "Optional existing VPC ID to use when vpc_cidr is null. If null, default VPC is used."
+  type        = string
+  default     = null
+}
+
 variable "public_subnet_cidrs" {
-  description = "CIDR blocks for public subnets. Only used if vpc_cidr is provided."
+  description = "Optional CIDR blocks for public subnets. If set (with private_subnet_cidrs), dedicated subnets are created in the selected VPC."
   type        = list(string)
   default     = null
 }
 
 variable "private_subnet_cidrs" {
-  description = "CIDR blocks for private subnets. Only used if vpc_cidr is provided."
+  description = "Optional CIDR blocks for private subnets. If set (with public_subnet_cidrs), dedicated subnets are created in the selected VPC."
   type        = list(string)
   default     = null
 }
