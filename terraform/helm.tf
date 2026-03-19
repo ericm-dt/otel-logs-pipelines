@@ -36,12 +36,12 @@ resource "helm_release" "otel_demo" {
   namespace  = kubernetes_namespace.otel_demo[0].metadata[0].name
 
   # Merge custom collector configuration with defaults.
-  # Sensitive credentials are injected via envFrom (the dynatrace-credentials
-  # Kubernetes secret), not via this values block, so they never appear in
-  # Helm release state or the Terraform plan output.
+  # Sensitive credentials are injected via extraEnvs using secretKeyRef
+  # (the dynatrace-credentials Kubernetes secret), not via this values block,
+  # so they never appear in Helm release state or the Terraform plan output.
   values = [
     yamlencode({
-      opentelemetryCollector = merge(
+      "opentelemetry-collector" = merge(
         {
           config = {
             receivers = {
@@ -64,17 +64,38 @@ resource "helm_release" "otel_demo" {
               }
             }
           }
-          # Non-sensitive env vars only. Sensitive values come from the
-          # dynatrace-credentials secret via envFrom below.
-          env = var.otel_collector_env
+          # Add extra environment variables: non-sensitive vars directly,
+          # and sensitive Dynatrace credentials via secret references.
+          extraEnvs = concat(
+            # Convert simple name-value pairs from otel_collector_env
+            [for name, value in var.otel_collector_env : {
+              name  = name
+              value = value
+            }],
+            # Add Dynatrace credentials from the kubernetes secret if created
+            var.dt_tenant_url != null ? [
+              {
+                name = "DT_TENANT_URL"
+                valueFrom = {
+                  secretKeyRef = {
+                    name = kubernetes_secret.dynatrace_credentials[0].metadata[0].name
+                    key  = "DT_TENANT_URL"
+                  }
+                }
+              },
+              {
+                name = "DT_API_TOKEN"
+                valueFrom = {
+                  secretKeyRef = {
+                    name = kubernetes_secret.dynatrace_credentials[0].metadata[0].name
+                    key  = "DT_API_TOKEN"
+                  }
+                }
+              }
+            ] : []
+          )
         },
-        { config = var.otel_collector_config },
-        # Mount the Dynatrace secret as envFrom if it was created.
-        var.dt_tenant_url != null ? {
-          envFrom = [{
-            secretRef = { name = "dynatrace-credentials" }
-          }]
-        } : {}
+        { config = var.otel_collector_config }
       )
     })
   ]

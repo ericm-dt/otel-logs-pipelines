@@ -27,14 +27,38 @@ provider "aws" {
 # cluster's endpoint and CA certificate from the aws_eks_cluster resource.
 provider "kubernetes" {
   host                   = aws_eks_cluster.primary.endpoint
-  token                  = data.aws_eks_cluster_auth.primary.token
   cluster_ca_certificate = base64decode(aws_eks_cluster.primary.certificate_authority[0].data)
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args = [
+      "eks",
+      "get-token",
+      "--cluster-name",
+      aws_eks_cluster.primary.name,
+      "--region",
+      var.region,
+    ]
+  }
 }
 
 provider "helm" {
   kubernetes {
     host                   = aws_eks_cluster.primary.endpoint
-    token                  = data.aws_eks_cluster_auth.primary.token
     cluster_ca_certificate = base64decode(aws_eks_cluster.primary.certificate_authority[0].data)
+
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args = [
+        "eks",
+        "get-token",
+        "--cluster-name",
+        aws_eks_cluster.primary.name,
+        "--region",
+        var.region,
+      ]
+    }
   }
 }

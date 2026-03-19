@@ -1,8 +1,3 @@
-# Fetch an auth token for the EKS cluster to authenticate the Kubernetes and Helm providers.
-data "aws_eks_cluster_auth" "primary" {
-  name = aws_eks_cluster.primary.name
-}
-
 # Discover the available AZs in the selected region.
 data "aws_availability_zones" "available" {
   state = "available"
