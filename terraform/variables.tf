@@ -87,3 +87,17 @@ variable "deploy_otel_demo" {
   type        = bool
   default     = false
 }
+
+variable "dt_tenant_url" {
+  description = "Dynatrace tenant base URL (e.g. https://abc12345.live.dynatrace.com). Stored as a Kubernetes secret."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "dt_api_token" {
+  description = "Dynatrace API token with metrics/traces/logs ingest scopes. Stored as a Kubernetes secret."
+  type        = string
+  default     = null
+  sensitive   = true
+}
