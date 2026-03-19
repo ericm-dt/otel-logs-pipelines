@@ -1,0 +1,58 @@
+# Terraform deployment variables for EKS + OpenTelemetry demo
+# Copy this file to terraform.tfvars and adjust values for your environment.
+
+# AWS / Cluster
+region             = "us-east-1"
+cluster_name       = "otel-demo-cluster"
+kubernetes_version = "1.29"
+
+# Node group sizing
+node_count    = 2
+instance_type = "t3.medium"
+disk_size_gb  = 50
+
+# Networking
+# Mode A (default): use default VPC + existing subnets
+# vpc_cidr = null
+# existing_vpc_id = null
+# public_subnet_cidrs = null
+# private_subnet_cidrs = null
+
+# Mode B: use default (or existing_vpc_id) VPC + create dedicated project subnets
+# existing_vpc_id      = null
+# public_subnet_cidrs  = ["172.31.100.0/24", "172.31.101.0/24"]
+# private_subnet_cidrs = ["172.31.110.0/24", "172.31.111.0/24"]
+
+# Mode C: create new VPC (subnets auto-derived if not set)
+vpc_cidr             = null
+existing_vpc_id      = null
+public_subnet_cidrs  = null
+private_subnet_cidrs = null
+
+# OTel demo Helm release
+otel_demo_namespace     = "otel-demo"
+otel_demo_chart_version = "0.33.0"
+
+# Optional collector customization
+# Add environment variables to the collector container.
+otel_collector_env = {
+  # EXAMPLE_ENV = "value"
+}
+
+# Add/override collector config (similar to cotelcol-config-extras.yml).
+otel_collector_config = {
+  # exporters = {
+  #   otlphttp = {
+  #     endpoint = "https://your-collector-endpoint"
+  #   }
+  # }
+  # service = {
+  #   pipelines = {
+  #     traces = {
+  #       receivers  = ["otlp"]
+  #       processors = ["batch"]
+  #       exporters  = ["otlphttp"]
+  #     }
+  #   }
+  # }
+}
