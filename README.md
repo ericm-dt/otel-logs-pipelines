@@ -128,8 +128,8 @@ terraform apply
 Configure kube context:
 
 ```bash
-aws eks update-kubeconfig --region <region> --name <cluster_name> --alias otel-multiship-demo
-kubectl config use-context otel-multiship-demo
+aws eks update-kubeconfig --region <region> --name <cluster_name> --alias <context_alias>
+kubectl config use-context <context_alias>
 ```
 
 ### Phase B: Deploy OTel Demo + Collector config
@@ -227,8 +227,8 @@ kubectl -n otel-demo get events --sort-by=.lastTimestamp | tail -50
 Refresh kube auth:
 
 ```bash
-aws eks update-kubeconfig --region <region> --name <cluster_name> --alias otel-multiship-demo
-kubectl config use-context otel-multiship-demo
+aws eks update-kubeconfig --region <region> --name <cluster_name> --alias <context_alias>
+kubectl config use-context <context_alias>
 ```
 
 ### OOM crash loops in demo services
