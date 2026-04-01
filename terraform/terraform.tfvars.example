@@ -36,6 +36,10 @@ deploy_otel_demo = false
 otel_demo_namespace     = "otel-demo"
 otel_demo_chart_version = "0.40.5"
 
+# Observability/runtime profile values are shown as complete copy/paste blocks
+# in the "Full scenario blocks" section near the end of this file.
+# Uncomment and customize one profile there.
+
 # Optional collector customization
 # Add non-sensitive environment variables to the collector container.
 # Sensitive credentials (DT_TENANT_URL, DT_API_TOKEN) are managed separately below.
@@ -49,68 +53,131 @@ otel_collector_env = {
 # Required when deploy_otel_demo = true and using the Dynatrace exporter.
 dt_tenant_url = "https://<your-environment-id>.live.dynatrace.com"
 
-# api token needs the following permissions:
-# - Ingest OpenTelemetry traces (openTelemetryTrace.ingest)
-# - Ingest metrics (metrics.ingest)
-# - Ingest logs (logs.ingest) 
-dt_api_token  = "dt0c01.<your-api-token>"
+# Recommended: split Dynatrace tokens by responsibility.
+# Operator token scopes (deployment/OneAgent):
+# - ReadConfig
+# - WriteConfig
+# - InstallerDownload
+# - DataExport
+dt_operator_api_token = "dt0c01.<your-operator-token>"
 
-# Add/override collector config (similar to cotelcol-config-extras.yml).
-otel_collector_config = {
-  # Full collector config override for Dynatrace via OTLP/HTTP exporter.
-  receivers = {
-    otlp = {
-      protocols = {
-        grpc = {}
-        http = {}
-      }
-    }
-  }
+# OTel ingest token scopes (collector OTLP export):
+# - openTelemetryTrace.ingest
+# - metrics.ingest
+# - logs.ingest
+dt_ingest_api_token = "dt0c01.<your-ingest-token>"
 
-  processors = {
-    "attributes/log_static_kv" = {
-      actions = [
-        {
-          key    = "observability.shipper.name"
-          action = "upsert"
-          value  = "otel-collector-oss"
-        },
-        {
-          key    = "observability.shipper.version"
-          action = "upsert"
-          value  = "0.142.0"
-        }
-      ]
-    }
-    batch = {}
-  }
+# Optional legacy fallback: single shared token used for both operator and ingest.
+# Keep null when using split tokens above.
+dt_api_token = null
 
-  exporters = {
-    "otlphttp/dynatrace" = {
-      endpoint = "$${env:DT_TENANT_URL}/api/v2/otlp"
-      headers = {
-        Authorization = "Api-Token $${env:DT_API_TOKEN}"
-      }
-    }
-  }
+# Collector config is scenario-dependent; use one full profile block below.
+# Keep empty by default.
+otel_collector_config = {}
 
-  service = {
-    pipelines = {
-      traces = {
-        receivers  = ["otlp"]
-        processors = ["batch"]
-        exporters  = ["otlphttp/dynatrace"]
-      }
-      metrics = {
-        receivers  = ["otlp"]
-        processors = ["batch"]
-        exporters  = ["otlphttp/dynatrace"]
-      }
-      logs = {
-        receivers  = ["otlp"]
-        processors = ["attributes/log_static_kv", "batch"]
-        exporters  = ["otlphttp/dynatrace"]
-      }
-    }
-  }
-}
+# ---------------------------------------------------------------------------
+# Full scenario blocks (copy/paste one profile and adjust values)
+# ---------------------------------------------------------------------------
+
+# Scenario 1: Pure OTel (SDK -> Collector -> Dynatrace)
+# deploy_otel_demo                  = true
+# otel_sdk_disabled                 = false
+# collector_logs_collection_enabled = false
+# deploy_dynatrace_operator         = false
+# deploy_dynakube                   = false
+#
+# Reuse dt_tenant_url and dt_ingest_api_token set above.
+#
+# otel_collector_config = {
+#   exporters = {
+#     "otlphttp/dynatrace" = {
+#       endpoint = "$${env:DT_TENANT_URL}/api/v2/otlp"
+#       headers = {
+#         Authorization = "Api-Token $${env:DT_API_TOKEN}"
+#       }
+#     }
+#   }
+#
+#   service = {
+#     pipelines = {
+#       traces = {
+#         receivers  = ["otlp"]
+#         processors = ["batch"]
+#         exporters  = ["otlphttp/dynatrace"]
+#       }
+#       metrics = {
+#         receivers  = ["otlp"]
+#         processors = ["batch"]
+#         exporters  = ["otlphttp/dynatrace"]
+#       }
+#       logs = {
+#         receivers  = ["otlp"]
+#         processors = ["attributes/log_static_kv", "batch"]
+#         exporters  = ["otlphttp/dynatrace"]
+#       }
+#     }
+#   }
+# }
+
+# Scenario 2: OneAgent for traces/metrics + Collector filelog for logs
+# First apply:  deploy_dynatrace_operator = true, deploy_dynakube = false
+# Second apply: set deploy_dynakube = true together with the values below.
+# deploy_otel_demo                  = true
+# otel_sdk_disabled                 = true
+# collector_logs_collection_enabled = true
+# deploy_dynatrace_operator         = true
+# deploy_dynakube                   = true
+# dynatrace_operator_version        = "v1.8.1"
+# oneagent_mode                     = "cloudNativeFullStack"
+#
+# Host-level resource attributes added by OneAgent to telemetry from each node.
+# This is the closest analog to the collector's attributes/log_static_kv processor,
+# but applies at the host level for OneAgent-emitted telemetry.
+# oneagent_host_properties = {
+#   "observability.shipper.name"    = "dynatrace-oneagent"
+#   # If you pin a specific OneAgent version in DynaKube, you can mirror it here:
+#   # "observability.shipper.version" = "1.305.0"
+#   "observability.environment"     = "dev"
+#   "team"                          = "platform"
+# }
+#
+# Reuse dt_tenant_url, dt_operator_api_token, and dt_ingest_api_token set above.
+#
+# otel_collector_config = {
+#   exporters = {
+#     "otlphttp/dynatrace" = {
+#       endpoint = "$${env:DT_TENANT_URL}/api/v2/otlp"
+#       headers = {
+#         Authorization = "Api-Token $${env:DT_API_TOKEN}"
+#       }
+#     }
+#   }
+#
+#   processors = {
+#     "attributes/log_static_kv" = {
+#       actions = [
+#         {
+#           key    = "observability.shipper.name"
+#           action = "upsert"
+#           value  = "otel-collector-oss"
+#         },
+#         {
+#           key    = "observability.shipper.version"
+#           action = "upsert"
+#           value  = "0.142.0"
+#         }
+#       ]
+#     }
+#     batch = {}
+#   }
+#
+#   service = {
+#     pipelines = {
+#       logs = {
+#         receivers  = ["filelog"]
+#         processors = ["attributes/log_static_kv", "batch"]
+#         exporters  = ["otlphttp/dynatrace"]
+#       }
+#     }
+#   }
+# }
