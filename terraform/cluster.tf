@@ -182,6 +182,10 @@ resource "aws_iam_role" "cluster" {
       Action    = "sts:AssumeRole"
     }]
   })
+
+  lifecycle {
+    ignore_changes = [tags, tags_all]
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "cluster_policy" {
@@ -208,6 +212,10 @@ resource "aws_eks_cluster" "primary" {
     endpoint_public_access  = true
   }
 
+  lifecycle {
+    ignore_changes = [tags, tags_all]
+  }
+
   depends_on = [aws_iam_role_policy_attachment.cluster_policy]
 }
 
@@ -226,6 +234,10 @@ resource "aws_iam_role" "nodes" {
       Action    = "sts:AssumeRole"
     }]
   })
+
+  lifecycle {
+    ignore_changes = [tags, tags_all]
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "nodes_worker_policy" {
@@ -248,11 +260,11 @@ resource "aws_iam_role_policy_attachment" "nodes_ecr_policy" {
 # ---------------------------------------------------------------------------
 
 resource "aws_eks_node_group" "primary" {
-  cluster_name    = aws_eks_cluster.primary.name
-  node_role_arn   = aws_iam_role.nodes.arn
-  subnet_ids      = local.node_subnet_ids
-  instance_types  = [var.instance_type]
-  disk_size       = var.disk_size_gb
+  cluster_name   = aws_eks_cluster.primary.name
+  node_role_arn  = aws_iam_role.nodes.arn
+  subnet_ids     = local.node_subnet_ids
+  instance_types = [var.instance_type]
+  disk_size      = var.disk_size_gb
 
   scaling_config {
     desired_size = var.node_count

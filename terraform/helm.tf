@@ -21,14 +21,18 @@ resource "kubernetes_secret" "dynatrace_credentials" {
 
   data = {
     DT_TENANT_URL = var.dt_tenant_url
-    DT_API_TOKEN  = var.dt_api_token
+    DT_API_TOKEN  = var.dt_ingest_api_token != null ? var.dt_ingest_api_token : var.dt_api_token
   }
 
   type = "Opaque"
 }
 
+locals {
+  otel_sdk_disabled = var.otel_sdk_disabled
+}
+
 resource "helm_release" "otel_demo" {
-  count = var.deploy_otel_demo ? 1 : 0
+  count      = var.deploy_otel_demo ? 1 : 0
   name       = "otel-demo"
   repository = "https://open-telemetry.github.io/opentelemetry-helm-charts"
   chart      = "opentelemetry-demo"
@@ -41,6 +45,15 @@ resource "helm_release" "otel_demo" {
   # so they never appear in Helm release state or the Terraform plan output.
   values = [
     yamlencode({
+      default = {
+        envOverrides = [
+          {
+            name  = "OTEL_SDK_DISABLED"
+            value = local.otel_sdk_disabled ? "true" : "false"
+          }
+        ]
+      }
+
       "opentelemetry-collector" = merge(
         {
           # Enable standard collector presets for host and Kubernetes metrics.
@@ -58,29 +71,20 @@ resource "helm_release" "otel_demo" {
             clusterMetrics = {
               enabled = true
             }
+            logsCollection = {
+              enabled = var.collector_logs_collection_enabled
+            }
           }
 
-          config = {
-            receivers = {
-              otlp = {
-                protocols = {
-                  grpc = {}
-                  http = {}
-                }
-              }
-            }
-            processors = {
-              batch = {}
-            }
-            exporters = {}
-            service = {
-              pipelines = {
-                traces  = { receivers = ["otlp"], exporters = [] }
-                metrics = { receivers = ["otlp"], exporters = [] }
-                logs    = { receivers = ["otlp"], exporters = [] }
-              }
-            }
-          }
+          # Collector configuration (receivers, processors, exporters, service pipelines)
+          # is defined in var.otel_collector_config and merged here.
+          # In logs-only mode, the logsCollection preset provides filelog receiver,
+          # and var.otel_collector_config provides Dynatrace OTLP exporter + logs pipeline.
+          #
+          # DO NOT add explicit config.receivers/exporters/service here, as it conflicts
+          # with var.otel_collector_config merge. The Helm chart merge behavior is:
+          # explicit config block OVERWRITES var values instead of merging them.
+
           # Add extra environment variables: non-sensitive vars directly,
           # and sensitive Dynatrace credentials via secret references.
           extraEnvs = concat(
@@ -123,6 +127,16 @@ resource "helm_release" "otel_demo" {
             }
             limits = {
               memory = "256Mi"
+            }
+          }
+        }
+        payment = {
+          resources = {
+            requests = {
+              memory = "256Mi"
+            }
+            limits = {
+              memory = "512Mi"
             }
           }
         }

@@ -70,6 +70,12 @@ variable "otel_demo_chart_version" {
   default     = "0.33.0"
 }
 
+variable "otel_sdk_disabled" {
+  description = "Whether to set OTEL_SDK_DISABLED=true on OTel Demo workloads. This only toggles app SDK emission and does not deploy OneAgent."
+  type        = bool
+  default     = false
+}
+
 variable "otel_collector_config" {
   description = "OpenTelemetry collector configuration (receivers, processors, exporters, service pipelines). Merged with Helm chart defaults."
   type        = any
@@ -80,6 +86,12 @@ variable "otel_collector_env" {
   description = "Environment variables to set on the OpenTelemetry collector container."
   type        = map(string)
   default     = {}
+}
+
+variable "collector_logs_collection_enabled" {
+  description = "Enable container logs collection on the OTel collector via the filelog receiver. Requires logsCollection preset which adds necessary RBAC and volume mounts."
+  type        = bool
+  default     = false
 }
 
 variable "deploy_otel_demo" {
@@ -96,8 +108,61 @@ variable "dt_tenant_url" {
 }
 
 variable "dt_api_token" {
-  description = "Dynatrace API token with metrics/traces/logs ingest scopes. Stored as a Kubernetes secret."
+  description = "(Legacy) Shared Dynatrace API token for both Operator deployment and OTLP ingest. Prefer dt_operator_api_token and dt_ingest_api_token."
   type        = string
   default     = null
   sensitive   = true
+}
+
+variable "dt_ingest_api_token" {
+  description = "Dynatrace API token for OTLP ingest from the OTel collector (openTelemetryTrace.ingest, metrics.ingest, logs.ingest). Stored as a Kubernetes secret."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "dt_operator_api_token" {
+  description = "Dynatrace API token for Dynatrace Operator/DynaKube/OneAgent deployment (ReadConfig, WriteConfig, InstallerDownload, DataExport). Stored as a Kubernetes secret."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+# ---------------------------------------------------------------------------
+# Dynatrace Operator
+# ---------------------------------------------------------------------------
+
+variable "deploy_dynatrace_operator" {
+  description = "Whether to deploy the Dynatrace Operator and create a DynaKube CR. Requires dt_tenant_url and dt_api_token."
+  type        = bool
+  default     = false
+}
+
+variable "deploy_dynakube" {
+  description = "Whether to create the DynaKube custom resource. Keep false on the first apply when installing the Dynatrace Operator so the CRD can be created first."
+  type        = bool
+  default     = false
+}
+
+variable "dynatrace_operator_version" {
+  description = "Version of the Dynatrace Operator Helm chart to deploy (e.g. v1.8.1)."
+  type        = string
+  default     = "v1.8.1"
+}
+
+variable "oneagent_mode" {
+  description = "OneAgent deployment mode for the DynaKube CR. 'cloudNativeFullStack' (recommended: code-level + host monitoring), 'hostMonitoring' (host/infra only, no code injection), or 'classicFullStack' (legacy full-stack)."
+  type        = string
+  default     = "cloudNativeFullStack"
+
+  validation {
+    condition     = contains(["cloudNativeFullStack", "hostMonitoring", "classicFullStack"], var.oneagent_mode)
+    error_message = "oneagent_mode must be one of: cloudNativeFullStack, hostMonitoring, classicFullStack."
+  }
+}
+
+variable "oneagent_host_properties" {
+  description = "Custom host-level resource attributes to set on OneAgent nodes via --set-host-property. These appear on all telemetry (traces, metrics, logs) emitted from each host."
+  type        = map(string)
+  default     = {}
 }
