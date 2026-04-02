@@ -29,14 +29,6 @@ spec:
         - name: frontend
           image: {{ include "boa.image" (list . .Values.frontend .Values.frontend.imageName) }}
           imagePullPolicy: {{ include "boa.imagePullPolicy" . }}
-          {{- with .Values.frontend.command }}
-          command:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.frontend.args }}
-          args:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
           ports:
             - containerPort: 8080
           envFrom:

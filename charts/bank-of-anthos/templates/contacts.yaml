@@ -29,14 +29,6 @@ spec:
         - name: contacts
           image: {{ include "boa.image" (list . .Values.contacts .Values.contacts.imageName) }}
           imagePullPolicy: {{ include "boa.imagePullPolicy" . }}
-          {{- with .Values.contacts.command }}
-          command:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.contacts.args }}
-          args:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
           ports:
             - containerPort: 8080
           envFrom:

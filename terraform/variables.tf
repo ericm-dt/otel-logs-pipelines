@@ -305,3 +305,19 @@ variable "dynakube_spec" {
   type    = any
   default = {}
 }
+
+# ---------------------------------------------------------------------------
+# Standalone OTel Collector gateway
+# ---------------------------------------------------------------------------
+
+variable "deploy_otel_collector" {
+  description = "Deploy a standalone OpenTelemetry Collector gateway (deployment mode) for Bank of Anthos telemetry."
+  type        = bool
+  default     = false
+}
+
+variable "otel_collector_chart_version" {
+  description = "Helm chart version for opentelemetry-collector (standalone gateway)."
+  type        = string
+  default     = "0.119.0"
+}

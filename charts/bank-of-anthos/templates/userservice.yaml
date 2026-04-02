@@ -30,14 +30,6 @@ spec:
         - name: userservice
           image: {{ include "boa.image" (list . .Values.userservice .Values.userservice.imageName) }}
           imagePullPolicy: {{ include "boa.imagePullPolicy" . }}
-          {{- with .Values.userservice.command }}
-          command:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.userservice.args }}
-          args:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
           ports:
             - containerPort: 8080
           envFrom:

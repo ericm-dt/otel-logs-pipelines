@@ -106,8 +106,6 @@ userservice:
   replicas: 1
   tokenExpirySeconds: 3600
   podAnnotations: {}
-  command: []
-  args: []
   extraEnv: []
   resources:
     requests:
@@ -128,8 +126,6 @@ contacts:
     tag: ""
   replicas: 1
   podAnnotations: {}
-  command: []
-  args: []
   extraEnv: []
   resources:
     requests:
@@ -209,8 +205,6 @@ frontend:
     tag: ""
   replicas: 1
   podAnnotations: {}
-  command: []
-  args: []
   extraEnv: []
   service:
     type: LoadBalancer
