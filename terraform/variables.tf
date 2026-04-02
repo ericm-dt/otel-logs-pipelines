@@ -58,6 +58,31 @@ variable "disk_size_gb" {
   default     = 50
 }
 
+# ---------------------------------------------------------------------------
+# EasyTrade
+# ---------------------------------------------------------------------------
+
+variable "deploy_easytrade" {
+  description = "Whether to deploy the Dynatrace EasyTrade demo application."
+  type        = bool
+  default     = false
+}
+
+variable "easytrade_namespace" {
+  description = "Kubernetes namespace for EasyTrade."
+  type        = string
+  default     = "easytrade"
+}
+
+variable "easytrade_helm_values" {
+  description = <<-EOT
+    Pass-through Helm values for the EasyTrade chart.
+    Anything supported by the official chart can be set here.
+  EOT
+  type    = any
+  default = {}
+}
+
 variable "otel_demo_namespace" {
   description = "The Kubernetes namespace in which to deploy the OTel demo."
   type        = string

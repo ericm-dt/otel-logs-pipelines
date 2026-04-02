@@ -8,6 +8,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    dynatrace = {
+      source  = "dynatrace-oss/dynatrace"
+      version = ">= 1.0.0"
+    }
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "~> 2.0"
@@ -21,6 +25,11 @@ terraform {
 
 provider "aws" {
   region = var.region
+}
+
+provider "dynatrace" {
+  dt_env_url   = var.dt_tenant_url
+  dt_api_token = var.dt_operator_api_token != null ? var.dt_operator_api_token : var.dt_api_token
 }
 
 # These providers are configured after the cluster is created, using the
