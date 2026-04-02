@@ -1,0 +1,81 @@
+{{- if .Values.accountsDb.enabled }}
+# ---------------------------------------------------------------------------
+# accounts-db – PostgreSQL for user accounts and contacts (Python services)
+# Custom image includes the accounts schema pre-initialized.
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: accounts-db
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "boa.selectorLabels" "accounts-db" | nindent 4 }}
+spec:
+  serviceName: accounts-db
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "boa.selectorLabels" "accounts-db" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "boa.selectorLabels" "accounts-db" | nindent 8 }}
+    spec:
+      containers:
+        - name: accounts-db
+          image: {{ include "boa.image" (list . .Values.accountsDb .Values.accountsDb.imageName) }}
+          imagePullPolicy: {{ include "boa.imagePullPolicy" . }}
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - configMapRef:
+                name: accounts-db-config
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.accountsDb.credentials.secretName }}
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: accounts-db-data
+              mountPath: /var/lib/postgresql/data
+              subPath: postgres
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      {{- if not .Values.accountsDb.persistence.enabled }}
+      volumes:
+        - name: accounts-db-data
+          emptyDir: {}
+      {{- end }}
+  {{- if .Values.accountsDb.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: accounts-db-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.accountsDb.storageClassName }}
+        storageClassName: {{ .Values.accountsDb.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.accountsDb.storage }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: accounts-db
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    {{- include "boa.selectorLabels" "accounts-db" | nindent 4 }}
+  ports:
+    - port: 5432
+      targetPort: 5432
+  clusterIP: None
+{{- end }}

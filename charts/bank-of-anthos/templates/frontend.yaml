@@ -1,0 +1,98 @@
+{{- if .Values.frontend.enabled }}
+# ---------------------------------------------------------------------------
+# frontend – Web UI connecting all services (Python / Flask)
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "boa.selectorLabels" "frontend" | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      {{- include "boa.selectorLabels" "frontend" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "boa.selectorLabels" "frontend" | nindent 8 }}
+      {{- $annotations := include "boa.podAnnotations" (list $.Values.global.podAnnotations .Values.frontend.podAnnotations) }}
+      {{- if $annotations }}
+      annotations:
+        {{- $annotations | nindent 8 }}
+      {{- end }}
+    spec:
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: frontend
+          image: {{ include "boa.image" (list . .Values.frontend .Values.frontend.imageName) }}
+          imagePullPolicy: {{ include "boa.imagePullPolicy" . }}
+          {{- with .Values.frontend.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.frontend.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: environment-config
+            - configMapRef:
+                name: service-api-config
+          env:
+            - name: PORT
+              value: "8080"
+            - name: SCHEME
+              value: "http"
+            - name: BANK_NAME
+              value: {{ .Values.frontend.bankName | quote }}
+            - name: DEFAULT_USERNAME
+              value: {{ .Values.frontend.defaultUsername | quote }}
+            - name: DEFAULT_PASSWORD
+              value: {{ .Values.frontend.defaultPassword | quote }}
+            - name: ENABLE_TRACING
+              value: "false"
+            - name: ENABLE_METRICS
+              value: "false"
+            {{- with .Values.frontend.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: jwt-key
+              mountPath: /tmp/.ssh
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+      volumes:
+        {{- include "boa.jwtPublicKeyVolume" . | nindent 8 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: {{ .Values.frontend.service.type }}
+  selector:
+    {{- include "boa.selectorLabels" "frontend" | nindent 4 }}
+  ports:
+    - port: {{ .Values.frontend.service.port }}
+      targetPort: {{ .Values.frontend.service.targetPort }}
+{{- end }}

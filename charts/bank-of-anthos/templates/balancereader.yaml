@@ -1,0 +1,89 @@
+{{- if .Values.balancereader.enabled }}
+# ---------------------------------------------------------------------------
+# balancereader – Reads account balance totals from ledger (Java / Spring Boot)
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: balancereader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "boa.selectorLabels" "balancereader" | nindent 4 }}
+spec:
+  replicas: {{ .Values.balancereader.replicas }}
+  selector:
+    matchLabels:
+      {{- include "boa.selectorLabels" "balancereader" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "boa.selectorLabels" "balancereader" | nindent 8 }}
+      {{- $annotations := include "boa.podAnnotations" (list $.Values.global.podAnnotations .Values.balancereader.podAnnotations) }}
+      {{- if $annotations }}
+      annotations:
+        {{- $annotations | nindent 8 }}
+      {{- end }}
+    spec:
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: balancereader
+          image: {{ include "boa.image" (list . .Values.balancereader .Values.balancereader.imageName) }}
+          imagePullPolicy: {{ include "boa.imagePullPolicy" . }}
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: environment-config
+            - configMapRef:
+                name: service-api-config
+            - configMapRef:
+                name: ledger-db-config
+          env:
+            - name: PORT
+              value: "8080"
+            - name: VERSION
+              value: {{ .Values.global.imageTag | quote }}
+            - name: CACHE_SIZE
+              value: {{ .Values.balancereader.cacheSize | quote }}
+            - name: ENABLE_TRACING
+              value: "false"
+            - name: ENABLE_METRICS
+              value: "false"
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.ledgerDb.credentials.secretName }}
+                  key: SPRING_DATASOURCE_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 120
+            periodSeconds: 15
+          volumeMounts:
+            - name: jwt-key
+              mountPath: /tmp/.ssh
+              readOnly: true
+          resources:
+            {{- toYaml .Values.balancereader.resources | nindent 12 }}
+      volumes:
+        {{- include "boa.jwtPublicKeyVolume" . | nindent 8 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: balancereader
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    {{- include "boa.selectorLabels" "balancereader" | nindent 4 }}
+  ports:
+    - port: 8080
+      targetPort: 8080
+{{- end }}

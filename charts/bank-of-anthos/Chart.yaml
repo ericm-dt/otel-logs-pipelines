@@ -1,0 +1,9 @@
+apiVersion: v2
+name: bank-of-anthos
+description: >
+  Bank of Anthos demo application for observability scenario scaffolding.
+  Observability-agnostic: supports Dynatrace OneAgent, OTel auto-instrumentation,
+  a standalone OTel Collector, or bare deployment with no observability agent.
+type: application
+version: 0.1.0
+appVersion: "v0.6.5"

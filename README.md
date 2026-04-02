@@ -65,9 +65,15 @@ At minimum, set:
 - `dt_tenant_url`
 - `dt_ingest_api_token` (for OTel collector OTLP export)
 - `dt_operator_api_token` (for Dynatrace Operator/OneAgent deployment, if enabled)
+- `dt_settings_api_token` (optional, for Dynatrace settings-as-code via Terraform provider)
 
 Legacy compatibility:
 - `dt_api_token` still works as a single shared token fallback, but split tokens are recommended.
+
+Dynatrace settings-as-code compatibility:
+- If you enable `deploy_dynatrace_settings_layer = true`, Terraform manages Dynatrace tenant settings directly.
+- `dt_settings_api_token` should include `settings.read` and `settings.write` scopes.
+- If `dt_settings_api_token` is null, Terraform falls back to `dt_operator_api_token`.
 
 ### Instrumentation vs. Shipping
 
@@ -317,6 +323,29 @@ deploy_dynakube = true
 ```
 
 Run again:
+
+## 7. Dynatrace Settings Layer (No UI Drift)
+
+You can optionally manage Dynatrace monitored technologies and process monitoring rules through Terraform:
+
+```hcl
+deploy_dynatrace_settings_layer              = true
+dynatrace_enable_python_monitored_technology = true
+dynatrace_enable_bank_of_anthos_process_rule = true
+
+# Recommended dedicated token (fallback is dt_operator_api_token)
+dt_settings_api_token = "dt0c01.<your-settings-token>"
+```
+
+What this layer currently manages:
+
+- Python monitored technology (environment scope)
+- A process monitoring include rule for the Bank of Anthos namespace (`MONITORING_ON`)
+
+Required API token scopes for this layer:
+
+- `settings.read`
+- `settings.write`
 
 ```bash
 terraform plan

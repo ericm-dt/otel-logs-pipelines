@@ -219,6 +219,48 @@ resource "aws_eks_cluster" "primary" {
   depends_on = [aws_iam_role_policy_attachment.cluster_policy]
 }
 
+data "tls_certificate" "eks_oidc" {
+  url = aws_eks_cluster.primary.identity[0].oidc[0].issuer
+}
+
+resource "aws_iam_openid_connect_provider" "eks" {
+  url             = aws_eks_cluster.primary.identity[0].oidc[0].issuer
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = [data.tls_certificate.eks_oidc.certificates[0].sha1_fingerprint]
+}
+
+resource "aws_iam_role" "ebs_csi_controller" {
+  name = "${var.cluster_name}-ebs-csi-controller-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = aws_iam_openid_connect_provider.eks.arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:aud" = "sts.amazonaws.com"
+            "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub" = "system:serviceaccount:kube-system:ebs-csi-controller-sa"
+          }
+        }
+      }
+    ]
+  })
+
+  lifecycle {
+    ignore_changes = [tags, tags_all]
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi_controller_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+  role       = aws_iam_role.ebs_csi_controller.name
+}
+
 # ---------------------------------------------------------------------------
 # IAM – node group role
 # ---------------------------------------------------------------------------
@@ -255,6 +297,8 @@ resource "aws_iam_role_policy_attachment" "nodes_ecr_policy" {
   role       = aws_iam_role.nodes.name
 }
 
+# EBS CSI driver policy – required for dynamic PVC provisioning (StatefulSets).
+# Bank of Anthos uses StatefulSets for its PostgreSQL databases.
 # ---------------------------------------------------------------------------
 # EKS managed node group
 # ---------------------------------------------------------------------------
@@ -281,5 +325,22 @@ resource "aws_eks_node_group" "primary" {
     aws_iam_role_policy_attachment.nodes_worker_policy,
     aws_iam_role_policy_attachment.nodes_cni_policy,
     aws_iam_role_policy_attachment.nodes_ecr_policy,
+  ]
+}
+
+# ---------------------------------------------------------------------------
+# EBS CSI Driver add-on
+# Required for dynamic EBS PVC provisioning (e.g. Bank of Anthos StatefulSets).
+# The node IAM role above carries AmazonEBSCSIDriverPolicy so the addon's
+# service account inherits permissions via the node identity.
+# ---------------------------------------------------------------------------
+resource "aws_eks_addon" "ebs_csi_driver" {
+  cluster_name             = aws_eks_cluster.primary.name
+  addon_name               = "aws-ebs-csi-driver"
+  service_account_role_arn = aws_iam_role.ebs_csi_controller.arn
+
+  depends_on = [
+    aws_eks_node_group.primary,
+    aws_iam_role_policy_attachment.ebs_csi_controller_policy,
   ]
 }

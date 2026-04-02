@@ -58,6 +58,77 @@ variable "disk_size_gb" {
   default     = 50
 }
 
+# ---------------------------------------------------------------------------
+# Bank of Anthos
+# ---------------------------------------------------------------------------
+
+variable "deploy_bank_of_anthos" {
+  description = "Whether to deploy the Bank of Anthos demo application."
+  type        = bool
+  default     = false
+}
+
+variable "bank_of_anthos_namespace" {
+  description = "Kubernetes namespace for the Bank of Anthos deployment."
+  type        = string
+  default     = "bank-of-anthos"
+}
+
+variable "bank_of_anthos_version" {
+  description = "Bank of Anthos image tag to deploy (e.g. v0.6.5)."
+  type        = string
+  default     = "v0.6.5"
+}
+
+variable "bank_of_anthos_jwt_private_key" {
+  description = <<-EOT
+    Optional PEM-encoded RSA private key used by userservice to sign JWTs.
+    If null, Terraform generates a keypair automatically via tls_private_key.
+    Stored as a Kubernetes Secret; never appears in Helm values or plan output.
+  EOT
+  type      = string
+  default   = null
+  sensitive = true
+}
+
+variable "bank_of_anthos_jwt_public_key" {
+  description = <<-EOT
+    Optional PEM-encoded RSA public key used by all services to verify JWTs.
+    If null, Terraform uses the public key from the generated keypair.
+    Stored as a Kubernetes Secret; never appears in Helm values or plan output.
+  EOT
+  type      = string
+  default   = null
+  sensitive = true
+}
+
+variable "bank_of_anthos_helm_values" {
+  description = <<-EOT
+    Pass-through Helm values for the Bank of Anthos chart.
+    Anything in charts/bank-of-anthos/values.yaml can be overridden here.
+    Useful for: pod annotations (OTel injection), service type, resource limits,
+    loadgenerator.enabled, DB credentials, image registry overrides, etc.
+
+    Example – enable OTel auto-inject on all pods:
+      bank_of_anthos_helm_values = {
+        global = {
+          podAnnotations = {
+            "instrumentation.opentelemetry.io/inject-java"   = "true"
+            "instrumentation.opentelemetry.io/inject-python" = "true"
+          }
+        }
+        loadgenerator = { enabled = true }
+      }
+  EOT
+  type    = any
+  default = {}
+}
+
+# ---------------------------------------------------------------------------
+# Legacy OTel demo (kept for backward compatibility; deploy_otel_demo defaults
+# to false and these variables are only used when it is true)
+# ---------------------------------------------------------------------------
+
 variable "otel_demo_namespace" {
   description = "The Kubernetes namespace in which to deploy the OTel demo."
   type        = string
@@ -67,11 +138,11 @@ variable "otel_demo_namespace" {
 variable "otel_demo_chart_version" {
   description = "The version of the opentelemetry-demo Helm chart to deploy."
   type        = string
-  default     = "0.33.0"
+  default     = "0.40.5"
 }
 
 variable "otel_sdk_disabled" {
-  description = "Whether to set OTEL_SDK_DISABLED=true on OTel Demo workloads. This only toggles app SDK emission and does not deploy OneAgent."
+  description = "Whether to set OTEL_SDK_DISABLED=true on OTel Demo workloads."
   type        = bool
   default     = false
 }
@@ -89,13 +160,13 @@ variable "otel_collector_env" {
 }
 
 variable "collector_logs_collection_enabled" {
-  description = "Enable container logs collection on the OTel collector via the filelog receiver. Requires logsCollection preset which adds necessary RBAC and volume mounts."
+  description = "Enable container logs collection on the OTel collector via the filelog receiver."
   type        = bool
   default     = false
 }
 
 variable "deploy_otel_demo" {
-  description = "Whether to deploy the OpenTelemetry demo Helm chart. Set to false to deploy only infrastructure."
+  description = "Whether to deploy the OpenTelemetry demo Helm chart (legacy; prefer Bank of Anthos)."
   type        = bool
   default     = false
 }
@@ -128,41 +199,109 @@ variable "dt_operator_api_token" {
   sensitive   = true
 }
 
+variable "dt_settings_api_token" {
+  description = "Dynatrace API token used by Terraform dynatrace provider for settings-as-code resources (for example monitored technologies and process monitoring rules). If null, Terraform reuses dt_operator_api_token."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "deploy_dynatrace_settings_layer" {
+  description = "Whether to manage Dynatrace tenant settings (Python monitored technology and process monitoring rules) through Terraform."
+  type        = bool
+  default     = false
+}
+
+variable "dynatrace_enable_python_monitored_technology" {
+  description = "Enable or disable Python monitored technology at Dynatrace environment scope."
+  type        = bool
+  default     = true
+}
+
+variable "dynatrace_enable_bank_of_anthos_process_rule" {
+  description = "Whether to create a process monitoring include rule for the Bank of Anthos Kubernetes namespace."
+  type        = bool
+  default     = true
+}
+
+variable "dynatrace_enable_global_auto_process_monitoring" {
+  description = "Whether to enforce global automatic deep process monitoring in Dynatrace environment scope."
+  type        = bool
+  default     = true
+}
+
+variable "dynatrace_enable_gunicorn_process_rule" {
+  description = "Whether to create an explicit MONITORING_ON process rule for gunicorn executables."
+  type        = bool
+  default     = true
+}
+
 # ---------------------------------------------------------------------------
 # Dynatrace Operator
+#
+# Pass-through design: rather than wrapping individual DynaKube fields as
+# Terraform variables, Terraform manages only what it MUST own (credentials
+# and the on/off toggle), and passes everything else directly to the upstream
+# Helm chart and CRD spec. Users consult the official Dynatrace docs instead
+# of learning a bespoke convention.
+#
+# Helm chart reference:
+#   https://github.com/Dynatrace/dynatrace-operator/tree/main/config/helm/chart/default
+# DynaKube CR reference:
+#   https://docs.dynatrace.com/docs/setup-and-configuration/setup-on-k8s/reference/dynakube
 # ---------------------------------------------------------------------------
 
 variable "deploy_dynatrace_operator" {
-  description = "Whether to deploy the Dynatrace Operator and create a DynaKube CR. Requires dt_tenant_url and dt_api_token."
+  description = "Whether to deploy the Dynatrace Operator Helm chart."
   type        = bool
   default     = false
 }
 
 variable "deploy_dynakube" {
-  description = "Whether to create the DynaKube custom resource. Keep false on the first apply when installing the Dynatrace Operator so the CRD can be created first."
-  type        = bool
-  default     = false
+  description = <<-EOT
+    Whether to create a DynaKube CR after the Operator is running.
+    Two-step workflow: first apply with deploy_dynatrace_operator=true and
+    deploy_dynakube=false (lets the Operator CRDs register), then apply again
+    with deploy_dynakube=true and dynakube_spec populated.
+  EOT
+  type    = bool
+  default = false
 }
 
-variable "dynatrace_operator_version" {
-  description = "Version of the Dynatrace Operator Helm chart to deploy (e.g. v1.8.1)."
-  type        = string
-  default     = "v1.8.1"
+variable "dt_operator_helm_values" {
+  description = <<-EOT
+    Pass-through Helm values for the Dynatrace Operator chart.
+    See the full values reference at:
+      https://github.com/Dynatrace/dynatrace-operator/tree/main/config/helm/chart/default
+    The apiUrl and token secret are managed by Terraform and do not need to be
+    set here. Everything else (operator resources, CSI driver settings, etc.)
+    can be controlled via this map.
+  EOT
+  type    = any
+  default = {}
 }
 
-variable "oneagent_mode" {
-  description = "OneAgent deployment mode for the DynaKube CR. 'cloudNativeFullStack' (recommended: code-level + host monitoring), 'hostMonitoring' (host/infra only, no code injection), or 'classicFullStack' (legacy full-stack)."
-  type        = string
-  default     = "cloudNativeFullStack"
+variable "dynakube_spec" {
+  description = <<-EOT
+    Full spec for the DynaKube custom resource (minus apiUrl and tokens, which
+    are injected from dt_tenant_url and the managed Kubernetes Secret).
+    See the full DynaKube API reference at:
+      https://docs.dynatrace.com/docs/setup-and-configuration/setup-on-k8s/reference/dynakube
 
-  validation {
-    condition     = contains(["cloudNativeFullStack", "hostMonitoring", "classicFullStack"], var.oneagent_mode)
-    error_message = "oneagent_mode must be one of: cloudNativeFullStack, hostMonitoring, classicFullStack."
-  }
-}
+    Minimal cloudNativeFullStack example:
+      dynakube_spec = {
+        oneAgent = {
+          cloudNativeFullStack = {}
+        }
+      }
 
-variable "oneagent_host_properties" {
-  description = "Custom host-level resource attributes to set on OneAgent nodes via --set-host-property. These appear on all telemetry (traces, metrics, logs) emitted from each host."
-  type        = map(string)
-  default     = {}
+    hostMonitoring only (no code injection):
+      dynakube_spec = {
+        oneAgent = {
+          hostMonitoring = {}
+        }
+      }
+  EOT
+  type    = any
+  default = {}
 }

@@ -1,0 +1,40 @@
+{{- if .Values.loadgenerator.enabled }}
+# ---------------------------------------------------------------------------
+# loadgenerator – Synthetic traffic generator (Python / Locust)
+# Disabled by default. Enable via loadgenerator.enabled = true.
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgenerator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "boa.selectorLabels" "loadgenerator" | nindent 4 }}
+spec:
+  replicas: {{ .Values.loadgenerator.replicas }}
+  selector:
+    matchLabels:
+      {{- include "boa.selectorLabels" "loadgenerator" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "boa.selectorLabels" "loadgenerator" | nindent 8 }}
+      {{- $annotations := include "boa.podAnnotations" (list $.Values.global.podAnnotations .Values.loadgenerator.podAnnotations) }}
+      {{- if $annotations }}
+      annotations:
+        {{- $annotations | nindent 8 }}
+      {{- end }}
+    spec:
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: loadgenerator
+          image: {{ include "boa.image" (list . .Values.loadgenerator .Values.loadgenerator.imageName) }}
+          imagePullPolicy: {{ include "boa.imagePullPolicy" . }}
+          env:
+            - name: FRONTEND_ADDR
+              value: "frontend:80"
+            - name: USERS
+              value: {{ .Values.loadgenerator.users | quote }}
+          resources:
+            {{- toYaml .Values.loadgenerator.resources | nindent 12 }}
+{{- end }}

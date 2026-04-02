@@ -1,0 +1,72 @@
+# ---------------------------------------------------------------------------
+# environment-config
+# Shared service routing and configuration read by all services via envFrom.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: environment-config
+  namespace: {{ .Release.Namespace }}
+data:
+  LOCAL_ROUTING_NUM: {{ .Values.bankRoutingNumber | quote }}
+  PUB_KEY_PATH: "/tmp/.ssh/publickey"
+  BALANCEREADER_API_ADDR: "balancereader:8080"
+  LEDGERWRITER_API_ADDR: "ledgerwriter:8080"
+  TRANSACTIONHISTORY_API_ADDR: "transactionhistory:8080"
+  CONTACTS_API_ADDR: "contacts:8080"
+  USERSERVICE_API_ADDR: "userservice:8080"
+---
+# ---------------------------------------------------------------------------
+# service-api-config
+# Upstream Bank of Anthos uses these exact variable names for cross-service
+# lookups. Keep this separate for compatibility with the application code.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service-api-config
+  namespace: {{ .Release.Namespace }}
+data:
+  TRANSACTIONS_API_ADDR: "ledgerwriter:8080"
+  BALANCES_API_ADDR: "balancereader:8080"
+  HISTORY_API_ADDR: "transactionhistory:8080"
+  CONTACTS_API_ADDR: "contacts:8080"
+  USERSERVICE_API_ADDR: "userservice:8080"
+---
+# ---------------------------------------------------------------------------
+# accounts-db-config
+# Read by accounts-db, userservice, and contacts via envFrom.
+# Note: ACCOUNTS_DB_URI embeds credentials — intentional for demo simplicity.
+# ---------------------------------------------------------------------------
+{{- if .Values.accountsDb.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: accounts-db-config
+  namespace: {{ .Release.Namespace }}
+data:
+  POSTGRES_DB: {{ .Values.accountsDb.credentials.dbName | quote }}
+  POSTGRES_USER: {{ .Values.accountsDb.credentials.username | quote }}
+  ACCOUNTS_DB_URI: {{ printf "postgresql://%s:%s@accounts-db:5432/%s"
+    .Values.accountsDb.credentials.username
+    .Values.accountsDb.credentials.password
+    .Values.accountsDb.credentials.dbName | quote }}
+{{- end }}
+---
+# ---------------------------------------------------------------------------
+# ledger-db-config
+# Read by ledger-db, balancereader, transactionhistory, and ledgerwriter.
+# SPRING_DATASOURCE_PASSWORD is injected separately from the Secret.
+# ---------------------------------------------------------------------------
+{{- if .Values.ledgerDb.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ledger-db-config
+  namespace: {{ .Release.Namespace }}
+data:
+  POSTGRES_DB: {{ .Values.ledgerDb.credentials.dbName | quote }}
+  POSTGRES_USER: {{ .Values.ledgerDb.credentials.username | quote }}
+  SPRING_DATASOURCE_URL: {{ printf "jdbc:postgresql://ledger-db:5432/%s" .Values.ledgerDb.credentials.dbName | quote }}
+  SPRING_DATASOURCE_USERNAME: {{ .Values.ledgerDb.credentials.username | quote }}
+{{- end }}

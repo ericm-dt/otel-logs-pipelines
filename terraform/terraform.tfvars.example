@@ -1,9 +1,9 @@
-# Terraform deployment variables for EKS + OpenTelemetry demo
+# Terraform deployment variables for EKS + Bank of Anthos observability demo
 # Copy this file to terraform.tfvars and adjust values for your environment.
 
 # AWS / Cluster
 region             = "us-east-1"
-cluster_name       = "otel-demo-cluster"
+cluster_name       = "boa-observability-demo"
 kubernetes_version = "1.32"
 
 # Node group sizing
@@ -11,173 +11,91 @@ node_count    = 3
 instance_type = "t3.large"
 disk_size_gb  = 50
 
-# Networking
-# Mode A (default): use default VPC + existing subnets
-# vpc_cidr = null
-# existing_vpc_id = null
-# public_subnet_cidrs = null
-# private_subnet_cidrs = null
-
-# Mode B: use default (or existing_vpc_id) VPC + create dedicated project subnets
-# existing_vpc_id      = null
-# public_subnet_cidrs  = ["172.31.100.0/24", "172.31.101.0/24"]
-# private_subnet_cidrs = ["172.31.110.0/24", "172.31.111.0/24"]
-
-# Mode C: create new VPC (subnets auto-derived if not set)
+# Networking (Mode A default: use default VPC + existing subnets)
 vpc_cidr             = null
 existing_vpc_id      = null
 public_subnet_cidrs  = null
 private_subnet_cidrs = null
 
-# whether or not to deploy the k8s resources
-deploy_otel_demo = false
+# ---------------------------------------------------------------------------
+# Bank of Anthos
+# ---------------------------------------------------------------------------
+deploy_bank_of_anthos    = true
+bank_of_anthos_namespace = "bank-of-anthos"
+bank_of_anthos_version   = "v0.6.5"
 
-# OTel demo Helm release
-otel_demo_namespace     = "otel-demo"
-otel_demo_chart_version = "0.40.5"
+# JWT keys are generated automatically by Terraform.
+# Optional override if you need fixed externally managed keys:
+# bank_of_anthos_jwt_private_key = "-----BEGIN RSA PRIVATE KEY----- ..."
+# bank_of_anthos_jwt_public_key  = "-----BEGIN PUBLIC KEY----- ..."
 
-# Observability/runtime profile values are shown as complete copy/paste blocks
-# in the "Full scenario blocks" section near the end of this file.
-# Uncomment and customize one profile there.
-
-# Optional collector customization
-# Add non-sensitive environment variables to the collector container.
-# Sensitive credentials (DT_TENANT_URL, DT_API_TOKEN) are managed separately below.
-otel_collector_env = {
-  OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE = "delta"
-  # EXAMPLE_ENV = "value"
+# Pass-through Helm values — anything in charts/bank-of-anthos/values.yaml.
+# See the profiles/ directory for complete scenario examples.
+bank_of_anthos_helm_values = {
+  # loadgenerator = { enabled = true }
+  #
+  # Apply OTel auto-instrumentation annotations to all pods (requires OTel Operator):
+  # global = {
+  #   podAnnotations = {
+  #     "instrumentation.opentelemetry.io/inject-java"   = "true"
+  #     "instrumentation.opentelemetry.io/inject-python" = "true"
+  #   }
+  # }
 }
 
-# Dynatrace credentials — these are stored as a Kubernetes secret at deploy
-# time and never appear in Helm values or plan output.
-# Required when deploy_otel_demo = true and using the Dynatrace exporter.
-dt_tenant_url = "https://<your-environment-id>.live.dynatrace.com"
+# ---------------------------------------------------------------------------
+# Dynatrace credentials
+# ---------------------------------------------------------------------------
+dt_tenant_url         = "https://<your-environment-id>.live.dynatrace.com"
+dt_operator_api_token = "dt0c01.<your-operator-token>"   # scopes: ReadConfig, WriteConfig, InstallerDownload, DataExport
+dt_ingest_api_token   = "dt0c01.<your-ingest-token>"     # scopes: openTelemetryTrace.ingest, metrics.ingest, logs.ingest
 
-# Recommended: split Dynatrace tokens by responsibility.
-# Operator token scopes (deployment/OneAgent):
-# - ReadConfig
-# - WriteConfig
-# - InstallerDownload
-# - DataExport
-dt_operator_api_token = "dt0c01.<your-operator-token>"
-
-# OTel ingest token scopes (collector OTLP export):
-# - openTelemetryTrace.ingest
-# - metrics.ingest
-# - logs.ingest
-dt_ingest_api_token = "dt0c01.<your-ingest-token>"
-
-# Optional legacy fallback: single shared token used for both operator and ingest.
-# Keep null when using split tokens above.
-dt_api_token = null
-
-# Collector config is scenario-dependent; use one full profile block below.
-# Keep empty by default.
-otel_collector_config = {}
+# Optional dedicated token for Terraform settings-as-code via dynatrace provider.
+# If null, Terraform reuses dt_operator_api_token.
+# Required scopes for this repo's settings layer: settings.read, settings.write
+dt_settings_api_token = null
 
 # ---------------------------------------------------------------------------
-# Full scenario blocks (copy/paste one profile and adjust values)
+# Dynatrace Operator
+#
+# Two-step workflow for initial deployment:
+#   Step 1: deploy_dynatrace_operator=true, deploy_dynakube=false  → Operator + CRDs
+#   Step 2: deploy_dynakube=true, dynakube_spec populated          → OneAgent
+#
+# dt_operator_helm_values: full Helm values pass-through.
+#   Reference: https://github.com/Dynatrace/dynatrace-operator/tree/main/config/helm/chart/default
+#
+# dynakube_spec: full DynaKube CR spec (apiUrl and tokens are injected automatically).
+#   Reference: https://docs.dynatrace.com/docs/setup-and-configuration/setup-on-k8s/reference/dynakube
 # ---------------------------------------------------------------------------
+deploy_dynatrace_operator = false
+deploy_dynakube           = false
+deploy_dynatrace_settings_layer = false
 
-# Scenario 1: Pure OTel (SDK -> Collector -> Dynatrace)
-# deploy_otel_demo                  = true
-# otel_sdk_disabled                 = false
-# collector_logs_collection_enabled = false
-# deploy_dynatrace_operator         = false
-# deploy_dynakube                   = false
-#
-# Reuse dt_tenant_url and dt_ingest_api_token set above.
-#
-# otel_collector_config = {
-#   exporters = {
-#     "otlphttp/dynatrace" = {
-#       endpoint = "$${env:DT_TENANT_URL}/api/v2/otlp"
-#       headers = {
-#         Authorization = "Api-Token $${env:DT_API_TOKEN}"
-#       }
-#     }
-#   }
-#
-#   service = {
-#     pipelines = {
-#       traces = {
-#         receivers  = ["otlp"]
-#         processors = ["batch"]
-#         exporters  = ["otlphttp/dynatrace"]
-#       }
-#       metrics = {
-#         receivers  = ["otlp"]
-#         processors = ["batch"]
-#         exporters  = ["otlphttp/dynatrace"]
-#       }
-#       logs = {
-#         receivers  = ["otlp"]
-#         processors = ["attributes/log_static_kv", "batch"]
-#         exporters  = ["otlphttp/dynatrace"]
-#       }
-#     }
+# Controls for Terraform-managed Dynatrace tenant settings
+dynatrace_enable_python_monitored_technology = true
+dynatrace_enable_bank_of_anthos_process_rule = true
+dynatrace_enable_global_auto_process_monitoring = true
+dynatrace_enable_gunicorn_process_rule = true
+
+dt_operator_helm_values = {}
+
+# cloudNativeFullStack — code-level instrumentation + host monitoring (recommended)
+dynakube_spec = {
+  oneAgent = {
+    cloudNativeFullStack = {}
+  }
+}
+
+# hostMonitoring only (no code injection):
+# dynakube_spec = {
+#   oneAgent = {
+#     hostMonitoring = {}
 #   }
 # }
 
-# Scenario 2: OneAgent for traces/metrics + Collector filelog for logs
-# First apply:  deploy_dynatrace_operator = true, deploy_dynakube = false
-# Second apply: set deploy_dynakube = true together with the values below.
-# deploy_otel_demo                  = true
-# otel_sdk_disabled                 = true
-# collector_logs_collection_enabled = true
-# deploy_dynatrace_operator         = true
-# deploy_dynakube                   = true
-# dynatrace_operator_version        = "v1.8.1"
-# oneagent_mode                     = "cloudNativeFullStack"
-#
-# Host-level resource attributes added by OneAgent to telemetry from each node.
-# This is the closest analog to the collector's attributes/log_static_kv processor,
-# but applies at the host level for OneAgent-emitted telemetry.
-# oneagent_host_properties = {
-#   "observability.shipper.name"    = "dynatrace-oneagent"
-#   # If you pin a specific OneAgent version in DynaKube, you can mirror it here:
-#   # "observability.shipper.version" = "1.305.0"
-#   "observability.environment"     = "dev"
-#   "team"                          = "platform"
-# }
-#
-# Reuse dt_tenant_url, dt_operator_api_token, and dt_ingest_api_token set above.
-#
-# otel_collector_config = {
-#   exporters = {
-#     "otlphttp/dynatrace" = {
-#       endpoint = "$${env:DT_TENANT_URL}/api/v2/otlp"
-#       headers = {
-#         Authorization = "Api-Token $${env:DT_API_TOKEN}"
-#       }
-#     }
-#   }
-#
-#   processors = {
-#     "attributes/log_static_kv" = {
-#       actions = [
-#         {
-#           key    = "observability.shipper.name"
-#           action = "upsert"
-#           value  = "otel-collector-oss"
-#         },
-#         {
-#           key    = "observability.shipper.version"
-#           action = "upsert"
-#           value  = "0.142.0"
-#         }
-#       ]
-#     }
-#     batch = {}
-#   }
-#
-#   service = {
-#     pipelines = {
-#       logs = {
-#         receivers  = ["filelog"]
-#         processors = ["attributes/log_static_kv", "batch"]
-#         exporters  = ["otlphttp/dynatrace"]
-#       }
-#     }
-#   }
-# }
+# ---------------------------------------------------------------------------
+# Legacy OTel demo (disabled — use Bank of Anthos instead)
+# ---------------------------------------------------------------------------
+deploy_otel_demo = false
+

@@ -16,6 +16,14 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 2.0"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
+    dynatrace = {
+      source  = "dynatrace-oss/dynatrace"
+      version = "~> 1.93"
+    }
   }
 }
 
@@ -61,4 +69,13 @@ provider "helm" {
       ]
     }
   }
+}
+
+locals {
+  dynatrace_settings_api_token = var.dt_settings_api_token != null ? var.dt_settings_api_token : var.dt_operator_api_token
+}
+
+provider "dynatrace" {
+  dt_env_url   = var.dt_tenant_url
+  dt_api_token = local.dynatrace_settings_api_token
 }

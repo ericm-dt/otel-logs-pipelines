@@ -1,0 +1,248 @@
+# ---------------------------------------------------------------------------
+# Bank of Anthos – Helm Chart Values
+# ---------------------------------------------------------------------------
+# Reference: https://github.com/GoogleCloudPlatform/bank-of-anthos
+
+global:
+  # ---------------------------------------------------------------------------
+  # Image settings
+  # Images for v0.6.5+ are published to GCP Artifact Registry.
+  # Verify the registry path for your target version in the BoA releases:
+  # https://github.com/GoogleCloudPlatform/bank-of-anthos/releases
+  # ---------------------------------------------------------------------------
+  imageRegistry: "us-central1-docker.pkg.dev/bank-of-anthos-ci/bank-of-anthos"
+  imageTag: "v0.6.5"
+  imagePullPolicy: IfNotPresent
+
+  # ---------------------------------------------------------------------------
+  # Pod annotations applied to ALL pods in the deployment.
+  #
+  # The primary use-case is injecting OTel auto-instrumentation via the
+  # OpenTelemetry Operator's Instrumentation CR. For example, to enable
+  # Java auto-instrumentation on all pods that support it:
+  #
+  #   podAnnotations:
+  #     instrumentation.opentelemetry.io/inject-java: "true"
+  #     instrumentation.opentelemetry.io/inject-python: "true"
+  #
+  # Service-level podAnnotations (below) are merged on top of these, so a
+  # service can override or add annotations without affecting others.
+  # ---------------------------------------------------------------------------
+  podAnnotations: {}
+
+# ---------------------------------------------------------------------------
+# Bank routing number used in demo transactions
+# ---------------------------------------------------------------------------
+bankRoutingNumber: "883745000"
+
+# ---------------------------------------------------------------------------
+# JWT signing key for inter-service authentication.
+#
+# userservice signs JWTs with the private key; all other services verify
+# using the public key. For demo purposes, copy the pre-generated key pair
+# from the BoA repository:
+#   https://github.com/GoogleCloudPlatform/bank-of-anthos/tree/main/extras/jwt
+#
+# Pass keys via Terraform (bank_of_anthos_jwt_private_key /
+# bank_of_anthos_jwt_public_key) – they are treated as sensitive values and
+# stored in a Kubernetes Secret, never in Helm release state.
+# ---------------------------------------------------------------------------
+jwtKey:
+  secretName: "jwt-key"
+  # PEM-encoded RSA private key (populated by Terraform set_sensitive)
+  privateKey: ""
+  # PEM-encoded RSA public key (populated by Terraform set_sensitive)
+  publicKey: ""
+
+# ---------------------------------------------------------------------------
+# accounts-db – PostgreSQL backend for user accounts and contacts (Python svcs)
+# ---------------------------------------------------------------------------
+accountsDb:
+  enabled: true
+  # imageName controls the image lookup under global.imageRegistry.
+  # Only override if the image slug differs from the default.
+  imageName: "accounts-db"
+  image:
+    repository: ""  # full override, e.g. "my-registry/accounts-db"
+    tag: ""         # version override; defaults to global.imageTag
+  persistence:
+    enabled: true
+  storage: "10Gi"
+  storageClassName: "gp2"
+  credentials:
+    secretName: "accounts-db-credentials"
+    dbName: accounts-db
+    username: accounts-admin
+    password: accounts-pwd   # demo credential — not for production
+
+# ---------------------------------------------------------------------------
+# ledger-db – PostgreSQL backend for ledger transactions (Java services)
+# ---------------------------------------------------------------------------
+ledgerDb:
+  enabled: true
+  imageName: "ledger-db"
+  image:
+    repository: ""
+    tag: ""
+  persistence:
+    enabled: true
+  storage: "10Gi"
+  storageClassName: "gp2"
+  credentials:
+    secretName: "ledger-db-credentials"
+    dbName: ledger-db
+    username: ledger-admin
+    password: ledger-pwd     # demo credential — not for production
+
+# ---------------------------------------------------------------------------
+# userservice – User account creation and JWT issuance (Python)
+# ---------------------------------------------------------------------------
+userservice:
+  enabled: true
+  imageName: "userservice"
+  image:
+    repository: ""
+    tag: ""
+  replicas: 1
+  tokenExpirySeconds: 3600
+  podAnnotations: {}
+  command: []
+  args: []
+  extraEnv: []
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# ---------------------------------------------------------------------------
+# contacts – User contact list management (Python)
+# ---------------------------------------------------------------------------
+contacts:
+  enabled: true
+  imageName: "contacts"
+  image:
+    repository: ""
+    tag: ""
+  replicas: 1
+  podAnnotations: {}
+  command: []
+  args: []
+  extraEnv: []
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# ---------------------------------------------------------------------------
+# balancereader – Reads account balances from ledger (Java / Spring Boot)
+# ---------------------------------------------------------------------------
+balancereader:
+  enabled: true
+  imageName: "balancereader"
+  image:
+    repository: ""
+    tag: ""
+  replicas: 1
+  cacheSize: "1000"
+  podAnnotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ---------------------------------------------------------------------------
+# transactionhistory – Transaction history for an account (Java / Spring Boot)
+# ---------------------------------------------------------------------------
+transactionhistory:
+  enabled: true
+  imageName: "transactionhistory"
+  image:
+    repository: ""
+    tag: ""
+  replicas: 1
+  cacheSize: "1000"
+  podAnnotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ---------------------------------------------------------------------------
+# ledgerwriter – Validates and writes transactions to ledger (Java / Spring Boot)
+# ---------------------------------------------------------------------------
+ledgerwriter:
+  enabled: true
+  imageName: "ledgerwriter"
+  image:
+    repository: ""
+    tag: ""
+  replicas: 1
+  podAnnotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ---------------------------------------------------------------------------
+# frontend – Web UI (Python / Flask)
+# ---------------------------------------------------------------------------
+frontend:
+  enabled: true
+  imageName: "frontend"
+  image:
+    repository: ""
+    tag: ""
+  replicas: 1
+  podAnnotations: {}
+  command: []
+  args: []
+  extraEnv: []
+  service:
+    type: LoadBalancer
+    port: 80
+    targetPort: 8080
+  bankName: "Bank of Anthos"
+  defaultUsername: testuser
+  defaultPassword: bank-of-anthos
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# ---------------------------------------------------------------------------
+# loadgenerator – Synthetic traffic generator (Python / Locust) — optional
+# ---------------------------------------------------------------------------
+loadgenerator:
+  enabled: false
+  imageName: "loadgenerator"
+  image:
+    repository: ""
+    tag: ""
+  replicas: 1
+  users: "5"
+  podAnnotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi

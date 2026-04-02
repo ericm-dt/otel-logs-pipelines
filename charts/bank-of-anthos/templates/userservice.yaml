@@ -1,0 +1,94 @@
+{{- if .Values.userservice.enabled }}
+# ---------------------------------------------------------------------------
+# userservice – User account creation and JWT issuance (Python)
+# Mounts the JWT private key for signing tokens.
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: userservice
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "boa.selectorLabels" "userservice" | nindent 4 }}
+spec:
+  replicas: {{ .Values.userservice.replicas }}
+  selector:
+    matchLabels:
+      {{- include "boa.selectorLabels" "userservice" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "boa.selectorLabels" "userservice" | nindent 8 }}
+      {{- $annotations := include "boa.podAnnotations" (list $.Values.global.podAnnotations .Values.userservice.podAnnotations) }}
+      {{- if $annotations }}
+      annotations:
+        {{- $annotations | nindent 8 }}
+      {{- end }}
+    spec:
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: userservice
+          image: {{ include "boa.image" (list . .Values.userservice .Values.userservice.imageName) }}
+          imagePullPolicy: {{ include "boa.imagePullPolicy" . }}
+          {{- with .Values.userservice.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.userservice.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: environment-config
+            - configMapRef:
+                name: accounts-db-config
+          env:
+            - name: PORT
+              value: "8080"
+            - name: PRIV_KEY_PATH
+              value: "/tmp/.ssh/privatekey"
+            - name: TOKEN_EXPIRY_SECONDS
+              value: {{ .Values.userservice.tokenExpirySeconds | quote }}
+            - name: ENABLE_TRACING
+              value: "false"
+            - name: ENABLE_METRICS
+              value: "false"
+            {{- with .Values.userservice.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          volumeMounts:
+            - name: jwt-key
+              mountPath: /tmp/.ssh
+              readOnly: true
+          resources:
+            {{- toYaml .Values.userservice.resources | nindent 12 }}
+      volumes:
+        {{- include "boa.jwtPrivateKeyVolume" . | nindent 8 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: userservice
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    {{- include "boa.selectorLabels" "userservice" | nindent 4 }}
+  ports:
+    - port: 8080
+      targetPort: 8080
+{{- end }}

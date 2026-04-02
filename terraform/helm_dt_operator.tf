@@ -1,11 +1,3 @@
-locals {
-  # Build --set-host-property args from the map. Each entry becomes a separate
-  # installer argument, e.g. { "env" = "prod" } → "--set-host-property=env=prod"
-  oneagent_host_property_args = [
-    for k, v in var.oneagent_host_properties : "--set-host-property=${k}=${v}"
-  ]
-}
-
 resource "kubernetes_namespace" "dynatrace" {
   count = var.deploy_dynatrace_operator ? 1 : 0
 
@@ -37,25 +29,40 @@ resource "kubernetes_secret" "dynatrace_operator_tokens" {
 # Dynatrace Operator — installed from the official OCI registry.
 # The Operator manages the lifecycle of OneAgent and ActiveGate components
 # declared in DynaKube custom resources.
+#
+# All Helm chart configuration is passed through via var.dt_operator_helm_values.
+# See: https://github.com/Dynatrace/dynatrace-operator/tree/main/config/helm/chart/default
 resource "helm_release" "dynatrace_operator" {
   count = var.deploy_dynatrace_operator ? 1 : 0
 
   name       = "dynatrace-operator"
   repository = "oci://public.ecr.aws/dynatrace"
   chart      = "dynatrace-operator"
-  version    = trimprefix(var.dynatrace_operator_version, "v")
   namespace  = kubernetes_namespace.dynatrace[0].metadata[0].name
   atomic     = true
   timeout    = 300
+
+  # Pass caller-supplied values straight through to the chart.
+  # No version pin here — control version via dt_operator_helm_values if needed.
+  values = [yamlencode(var.dt_operator_helm_values)]
 
   depends_on = [kubernetes_namespace.dynatrace]
 }
 
 # DynaKube custom resource — tells the Operator what to deploy.
-# The mode field selects the OneAgent deployment strategy:
-#   cloudNativeFullStack  — code-level tracing + host/infra (recommended)
-#   hostMonitoring        — host/infra metrics only, no code injection
-#   classicFullStack      — legacy full-stack (requires kernel module)
+#
+# Terraform manages only the two fields it owns:
+#   apiUrl  — derived from dt_tenant_url
+#   tokens  — references the managed Kubernetes Secret
+#
+# Everything else is supplied by the caller via var.dynakube_spec and merged
+# on top. Consult the official DynaKube API reference for all available fields:
+#   https://docs.dynatrace.com/docs/setup-and-configuration/setup-on-k8s/reference/dynakube
+#
+# Example dynakube_spec for cloudNativeFullStack:
+#   dynakube_spec = {
+#     oneAgent = { cloudNativeFullStack = {} }
+#   }
 resource "kubernetes_manifest" "dynakube" {
   count = var.deploy_dynakube ? 1 : 0
 
@@ -66,19 +73,15 @@ resource "kubernetes_manifest" "dynakube" {
       name      = "dynakube"
       namespace = kubernetes_namespace.dynatrace[0].metadata[0].name
     }
-    spec = {
-      # apiUrl must be the Dynatrace environment API endpoint.
-      # For SaaS: https://<environment-id>.live.dynatrace.com/api
-      apiUrl = "${var.dt_tenant_url}/api"
-      tokens = kubernetes_secret.dynatrace_operator_tokens[0].metadata[0].name
-      oneAgent = {
-        (var.oneagent_mode) = {
-          args = local.oneagent_host_property_args
-        }
-      }
-    }
+    spec = merge(
+      {
+        apiUrl = "${var.dt_tenant_url}/api"
+        tokens = kubernetes_secret.dynatrace_operator_tokens[0].metadata[0].name
+      },
+      var.dynakube_spec
+    )
   }
 
-  # DynaKube CRD is installed by the Operator Helm chart; wait for it.
+  # DynaKube CRD is registered by the Operator Helm chart; wait for it.
   depends_on = [helm_release.dynatrace_operator]
 }

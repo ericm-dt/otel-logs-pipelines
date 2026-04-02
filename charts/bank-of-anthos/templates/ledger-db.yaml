@@ -1,0 +1,81 @@
+{{- if .Values.ledgerDb.enabled }}
+# ---------------------------------------------------------------------------
+# ledger-db – PostgreSQL for ledger transactions (Java / Spring Boot services)
+# Custom image includes the ledger schema pre-initialized.
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ledger-db
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "boa.selectorLabels" "ledger-db" | nindent 4 }}
+spec:
+  serviceName: ledger-db
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "boa.selectorLabels" "ledger-db" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "boa.selectorLabels" "ledger-db" | nindent 8 }}
+    spec:
+      containers:
+        - name: ledger-db
+          image: {{ include "boa.image" (list . .Values.ledgerDb .Values.ledgerDb.imageName) }}
+          imagePullPolicy: {{ include "boa.imagePullPolicy" . }}
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - configMapRef:
+                name: ledger-db-config
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.ledgerDb.credentials.secretName }}
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: ledger-db-data
+              mountPath: /var/lib/postgresql/data
+              subPath: postgres
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      {{- if not .Values.ledgerDb.persistence.enabled }}
+      volumes:
+        - name: ledger-db-data
+          emptyDir: {}
+      {{- end }}
+  {{- if .Values.ledgerDb.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: ledger-db-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.ledgerDb.storageClassName }}
+        storageClassName: {{ .Values.ledgerDb.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.ledgerDb.storage }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ledger-db
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    {{- include "boa.selectorLabels" "ledger-db" | nindent 4 }}
+  ports:
+    - port: 5432
+      targetPort: 5432
+  clusterIP: None
+{{- end }}
