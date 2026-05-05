@@ -1,5 +1,14 @@
 # Terraform deployment variables for EKS + OpenTelemetry demo
-# Copy this file to terraform.tfvars and adjust values for your environment.
+# Copy to terraform.tfvars and edit values for your environment.
+#
+# IMPORTANT:
+# - Edit the ENVIRONMENT VALUES sections below.
+# - Do not rely on this file for phase toggles. Phase overlays in
+#   terraform/phases/*.tfvars override the toggle variables at runtime.
+
+# =============================================================================
+# ENVIRONMENT VALUES (EDIT THESE)
+# =============================================================================
 
 # AWS / Cluster
 region             = "us-east-1"
@@ -29,35 +38,47 @@ existing_vpc_id      = null
 public_subnet_cidrs  = null
 private_subnet_cidrs = null
 
-# whether or not to deploy the k8s resources
-deploy_otel_demo = false
+# Bindplane Cloud provider connectivity/auth.
+# Required when deploy_bindplane_controlplane=true in phase overlays.
+bindplane_provider_remote_url = "https://<your-bindplane-cloud-url>"
+bindplane_provider_api_key    = "<your-bindplane-api-key>"
+# Optional basic auth alternative
+bindplane_provider_username = null
+bindplane_provider_password = null
+
+# Set true only for test environments with self-signed certs.
+bindplane_provider_tls_skip_verify = false
+
+# Optional bootstrap manifest path for Cloud collector install.
+# Used only if a phase overlay enables deploy_bindplane_cloud_bootstrap.
+bindplane_bootstrap_manifest_path = "./bindplane-agent-bootstrap.yaml"
+
+# If deploying demo apps with external collector (phase 3), set this.
+# Example: http://otel-collector.otel-demo.svc.cluster.local:4318
+external_otlp_endpoint = null
 
 # OTel demo Helm release
 otel_demo_namespace     = "otel-demo"
 otel_demo_chart_version = "0.40.5"
 
 # Optional collector customization
-# Add non-sensitive environment variables to the collector container.
-# Sensitive credentials (DT_TENANT_URL, DT_API_TOKEN) are managed separately below.
 otel_collector_env = {
   OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE = "delta"
   # EXAMPLE_ENV = "value"
 }
 
-# Dynatrace credentials — these are stored as a Kubernetes secret at deploy
-# time and never appear in Helm values or plan output.
-# Required when deploy_otel_demo = true and using the Dynatrace exporter.
+# Dynatrace credentials used by embedded collector path.
+# Required when deploy_otel_demo=true and deploy_embedded_collector=true.
 dt_tenant_url = "https://<your-environment-id>.live.dynatrace.com"
 
-# api token needs the following permissions:
-# - Ingest OpenTelemetry traces (openTelemetryTrace.ingest)
-# - Ingest metrics (metrics.ingest)
-# - Ingest logs (logs.ingest) 
-dt_api_token  = "dt0c01.<your-api-token>"
+# API token needs:
+# - openTelemetryTrace.ingest
+# - metrics.ingest
+# - logs.ingest
+dt_api_token = "dt0c01.<your-api-token>"
 
 # Add/override collector config (similar to cotelcol-config-extras.yml).
 otel_collector_config = {
-  # Full collector config override for Dynatrace via OTLP/HTTP exporter.
   receivers = {
     otlp = {
       protocols = {
@@ -114,3 +135,45 @@ otel_collector_config = {
     }
   }
 }
+
+# =============================================================================
+# OPTIONAL SELF-HOSTED BINDPLANE (ADVANCED/NOT CLOUD-DEFAULT)
+# =============================================================================
+
+# Leave disabled unless intentionally running self-hosted Bindplane.
+deploy_bindplane_server = false
+bindplane_namespace     = "bindplane"
+bindplane_chart_version = "1.34.0"
+
+# Required only when deploy_bindplane_server=true
+bindplane_admin_username = ""
+bindplane_admin_password = ""
+bindplane_sessions_secret = ""
+bindplane_license         = ""
+
+# Required only when deploy_bindplane_server=true:
+# explicitly set backend.type in Helm values.
+bindplane_helm_values = {
+  backend = {
+    type = "bbolt"
+    bbolt = {
+      volumeSize = "10Gi"
+    }
+  }
+  image = {
+    tag = "v1.98.0"
+  }
+}
+
+# =============================================================================
+# PHASE-CONTROLLED TOGGLES (DO NOT EDIT FOR NORMAL WORKFLOW)
+# =============================================================================
+# These values are shown for clarity only. They are overridden by:
+# - phases/01-infra.tfvars
+# - phases/02-controlplane.tfvars
+# - phases/03-demo-external-collector.tfvars
+
+deploy_otel_demo                 = false
+deploy_bindplane_controlplane    = false
+deploy_bindplane_cloud_bootstrap = false
+deploy_embedded_collector        = true

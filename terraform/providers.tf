@@ -1,6 +1,9 @@
 terraform {
   required_version = ">= 1.5.0"
 
+  # S3 is the preferred backend for shared/persistent use.
+  # To use it: terraform init -backend-config=backend.tfvars
+  # To use local state without editing this file: terraform init -backend=false
   backend "s3" {}
 
   required_providers {
@@ -15,6 +18,10 @@ terraform {
     helm = {
       source  = "hashicorp/helm"
       version = "~> 2.0"
+    }
+    bindplane = {
+      source  = "observIQ/bindplane"
+      version = "~> 1.8"
     }
   }
 }
@@ -61,4 +68,12 @@ provider "helm" {
       ]
     }
   }
+}
+
+provider "bindplane" {
+  remote_url      = var.bindplane_provider_remote_url
+  api_key         = var.bindplane_provider_api_key
+  username        = var.bindplane_provider_username
+  password        = var.bindplane_provider_password
+  tls_skip_verify = var.bindplane_provider_tls_skip_verify
 }

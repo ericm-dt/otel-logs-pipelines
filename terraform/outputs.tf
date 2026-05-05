@@ -24,3 +24,28 @@ output "otel_demo_namespace" {
   description = "The Kubernetes namespace containing the OTel demo deployment (only output if deployed)."
   value       = var.deploy_otel_demo ? kubernetes_namespace.otel_demo[0].metadata[0].name : null
 }
+
+output "bindplane_namespace" {
+  description = "The Kubernetes namespace containing Bindplane server resources (only output if deployed)."
+  value       = var.deploy_bindplane_server ? kubernetes_namespace.bindplane[0].metadata[0].name : null
+}
+
+output "bindplane_server_url" {
+  description = "In-cluster Bindplane server URL (only output if deployed)."
+  value       = var.deploy_bindplane_server ? "http://bindplane.${kubernetes_namespace.bindplane[0].metadata[0].name}.svc.cluster.local:3001" : null
+}
+
+output "bindplane_opamp_url" {
+  description = "In-cluster Bindplane OpAMP WebSocket URL (only output if deployed)."
+  value       = var.deploy_bindplane_server ? "ws://bindplane.${kubernetes_namespace.bindplane[0].metadata[0].name}.svc.cluster.local:3001/v1/opamp" : null
+}
+
+output "bindplane_configuration_name" {
+  description = "Name of the managed Bindplane collector configuration (only output if control-plane management is enabled)."
+  value       = var.deploy_bindplane_controlplane ? bindplane_configuration_v2.otel_demo[0].name : null
+}
+
+output "bindplane_configuration_match_labels" {
+  description = "Computed labels used by Bindplane to match managed agents (only output if control-plane management is enabled)."
+  value       = var.deploy_bindplane_controlplane ? bindplane_configuration_v2.otel_demo[0].match_labels : null
+}
