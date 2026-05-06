@@ -1,8 +1,6 @@
 # Dynatrace Bindplane Sandbox
 
-Deploy an AWS EKS cluster and run the OpenTelemetry Demo with a Bindplane Cloud-managed collector pipeline shipping telemetry to Dynatrace.
-
-This doesn't install any processors or connectors, just the bare minimum to get started with Bindplane and Dynatrace.
+A bootsrapped Bindplane pipeline that ships from the Otel Demo to Dynatrace.
 
 ## What This Repo Deploys
 
