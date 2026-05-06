@@ -45,3 +45,5 @@ terraform/plans/
 terraform.rc
 
 .vscode
+
+bindplane-agent.yaml

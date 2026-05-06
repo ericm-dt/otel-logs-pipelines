@@ -1,5 +1,6 @@
 locals {
   bindplane_effective_dynatrace_api_token = coalesce(var.bindplane_dynatrace_api_token, var.dt_api_token)
+  bindplane_effective_configuration_name  = coalesce(var.bindplane_configuration_name, var.cluster_name)
 }
 
 resource "bindplane_source" "otlp" {
@@ -17,12 +18,32 @@ resource "bindplane_destination" "dynatrace" {
 
   rollout = true
   name    = var.bindplane_dynatrace_destination_name
-  type    = "otlp"
+  type    = "otlp_grpc"
 
   parameters_json = jsonencode([
     {
-      name  = "endpoint"
-      value = "${var.dt_tenant_url}/api/v2/otlp"
+      name  = "telemetry_types"
+      value = ["Logs", "Metrics", "Traces"]
+    },
+    {
+      name  = "hostname"
+      value = replace(var.dt_tenant_url, "https://", "")
+    },
+    {
+      name  = "protocol"
+      value = "http"
+    },
+    {
+      name  = "http_port"
+      value = 443
+    },
+    {
+      name  = "enable_tls"
+      value = true
+    },
+    {
+      name  = "http_path_prefix"
+      value = "/api/v2/otlp"
     },
     {
       name  = "headers"
@@ -39,8 +60,6 @@ resource "bindplane_configuration_v2" "otel_demo" {
   count = var.deploy_bindplane_controlplane ? 1 : 0
 
   lifecycle {
-    create_before_destroy = true
-
     precondition {
       condition     = !var.deploy_bindplane_controlplane || var.bindplane_provider_remote_url != null
       error_message = "When deploy_bindplane_controlplane=true, set bindplane_provider_remote_url to a reachable Bindplane API URL."
@@ -66,7 +85,7 @@ resource "bindplane_configuration_v2" "otel_demo" {
   }
 
   rollout  = var.bindplane_rollout_enabled
-  name     = var.bindplane_configuration_name
+  name     = local.bindplane_effective_configuration_name
   platform = var.bindplane_collector_platform
   labels   = var.bindplane_configuration_labels
 

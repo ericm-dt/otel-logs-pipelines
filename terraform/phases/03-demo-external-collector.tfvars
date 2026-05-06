@@ -5,5 +5,5 @@ deploy_otel_demo                 = true
 deploy_bindplane_controlplane    = true
 deploy_bindplane_cloud_bootstrap = false
 
-deploy_embedded_collector = false
-# Set external_otlp_endpoint in terraform.tfvars for your environment.
+deploy_embedded_collector = true
+# Set otel_collector_endpoint in terraform.tfvars for your environment.

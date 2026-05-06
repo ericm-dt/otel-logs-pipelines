@@ -13,7 +13,7 @@
 # AWS / Cluster
 region             = "us-east-1"
 cluster_name       = "otel-demo-cluster"
-kubernetes_version = "1.32"
+kubernetes_version = "1.33"
 
 # Node group sizing
 node_count    = 3
@@ -40,7 +40,7 @@ private_subnet_cidrs = null
 
 # Bindplane Cloud provider connectivity/auth.
 # Required when deploy_bindplane_controlplane=true in phase overlays.
-bindplane_provider_remote_url = "https://<your-bindplane-cloud-url>"
+bindplane_provider_remote_url = "https://app.bindplane.com"
 bindplane_provider_api_key    = "<your-bindplane-api-key>"
 # Optional basic auth alternative
 bindplane_provider_username = null
@@ -49,23 +49,25 @@ bindplane_provider_password = null
 # Set true only for test environments with self-signed certs.
 bindplane_provider_tls_skip_verify = false
 
-# Optional bootstrap manifest path for Cloud collector install.
+# Optional Bindplane Cloud agent manifest path.
 # Used only if a phase overlay enables deploy_bindplane_cloud_bootstrap.
-bindplane_bootstrap_manifest_path = "./bindplane-agent-bootstrap.yaml"
+bindplane_bootstrap_manifest_path = "./bindplane-agent.yaml"
 
-# If deploying demo apps with external collector (phase 3), set this.
-# Example: http://otel-collector.otel-demo.svc.cluster.local:4318
-external_otlp_endpoint = null
+# Set this to the service url of the collector deployed by bindplane.
+# Example: "http://bindplane-node-agent.bindplane-agent.svc.cluster.local:4318"
+otel_collector_endpoint = null
 
 # OTel demo Helm release
 otel_demo_namespace     = "otel-demo"
 otel_demo_chart_version = "0.40.5"
 
-# Optional collector customization
-otel_collector_env = {
-  OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE = "delta"
-  # EXAMPLE_ENV = "value"
-}
+# Optional embedded collector customization.
+# Leave empty for the embedded collector path.
+# When using external collector (Bindplane), set the endpoint here:
+# otel_collector_env = {
+#   "OTEL_COLLECTOR_NAME" = "<service>.<namespace>.svc.cluster.local"
+# }
+otel_collector_env = {}
 
 # Dynatrace credentials used by embedded collector path.
 # Required when deploy_otel_demo=true and deploy_embedded_collector=true.
@@ -76,65 +78,6 @@ dt_tenant_url = "https://<your-environment-id>.live.dynatrace.com"
 # - metrics.ingest
 # - logs.ingest
 dt_api_token = "dt0c01.<your-api-token>"
-
-# Add/override collector config (similar to cotelcol-config-extras.yml).
-otel_collector_config = {
-  receivers = {
-    otlp = {
-      protocols = {
-        grpc = {}
-        http = {}
-      }
-    }
-  }
-
-  processors = {
-    "attributes/log_static_kv" = {
-      actions = [
-        {
-          key    = "observability.shipper.name"
-          action = "upsert"
-          value  = "otel-collector-oss"
-        },
-        {
-          key    = "observability.shipper.version"
-          action = "upsert"
-          value  = "0.142.0"
-        }
-      ]
-    }
-    batch = {}
-  }
-
-  exporters = {
-    "otlphttp/dynatrace" = {
-      endpoint = "$${env:DT_TENANT_URL}/api/v2/otlp"
-      headers = {
-        Authorization = "Api-Token $${env:DT_API_TOKEN}"
-      }
-    }
-  }
-
-  service = {
-    pipelines = {
-      traces = {
-        receivers  = ["otlp"]
-        processors = ["batch"]
-        exporters  = ["otlphttp/dynatrace"]
-      }
-      metrics = {
-        receivers  = ["otlp"]
-        processors = ["batch"]
-        exporters  = ["otlphttp/dynatrace"]
-      }
-      logs = {
-        receivers  = ["otlp"]
-        processors = ["attributes/log_static_kv", "batch"]
-        exporters  = ["otlphttp/dynatrace"]
-      }
-    }
-  }
-}
 
 # =============================================================================
 # OPTIONAL SELF-HOSTED BINDPLANE (ADVANCED/NOT CLOUD-DEFAULT)

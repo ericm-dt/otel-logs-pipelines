@@ -37,7 +37,7 @@ variable "cluster_name" {
 variable "kubernetes_version" {
   description = "The Kubernetes version for the EKS cluster."
   type        = string
-  default     = "1.29"
+  default     = "1.33"
 }
 
 variable "node_count" {
@@ -71,13 +71,13 @@ variable "otel_demo_chart_version" {
 }
 
 variable "otel_collector_config" {
-  description = "OpenTelemetry collector configuration (receivers, processors, exporters, service pipelines). Merged with Helm chart defaults."
+  description = "Optional embedded OTel collector configuration override. Only used when deploy_embedded_collector is true."
   type        = any
   default     = {}
 }
 
 variable "otel_collector_env" {
-  description = "Environment variables to set on the OpenTelemetry collector container."
+  description = "Optional environment variables for the embedded OTel collector container. Only used when deploy_embedded_collector is true."
   type        = map(string)
   default     = {}
 }
@@ -94,7 +94,7 @@ variable "deploy_embedded_collector" {
   default     = true
 }
 
-variable "external_otlp_endpoint" {
+variable "otel_collector_endpoint" {
   description = "Optional OTLP endpoint used by demo services when deploy_embedded_collector is false (for example, http://otel-collector.otel-demo.svc.cluster.local:4318)."
   type        = string
   default     = null
@@ -192,27 +192,27 @@ variable "bindplane_provider_tls_skip_verify" {
 }
 
 variable "deploy_bindplane_cloud_bootstrap" {
-  description = "Whether to apply a Bindplane Cloud-generated Kubernetes collector bootstrap manifest with kubectl."
+  description = "Whether to apply the Bindplane Cloud-generated Kubernetes agent manifest with kubectl."
   type        = bool
   default     = false
 }
 
 variable "bindplane_bootstrap_manifest_path" {
-  description = "Path to the Bindplane Cloud-generated Kubernetes collector install manifest. Required when deploy_bindplane_cloud_bootstrap is true."
+  description = "Path to the Bindplane Cloud-generated Kubernetes agent manifest (for example, ./bindplane-agent.yaml). Required when deploy_bindplane_cloud_bootstrap is true."
   type        = string
   default     = null
 }
 
 variable "bindplane_configuration_name" {
-  description = "Name for the Bindplane-managed collector configuration."
+  description = "Optional name for the Bindplane-managed collector configuration. If null, cluster_name is used."
   type        = string
-  default     = "otel-demo-config"
+  default     = null
 }
 
 variable "bindplane_collector_platform" {
-  description = "Collector platform for Bindplane configuration."
+  description = "Collector platform for the Bindplane configuration. Use kubernetes for the Bindplane Cloud fleet/bootstrap flow in this repo."
   type        = string
-  default     = "linux"
+  default     = "kubernetes-daemonset"
 }
 
 variable "bindplane_configuration_labels" {

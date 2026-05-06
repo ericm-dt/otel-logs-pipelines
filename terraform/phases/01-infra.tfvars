@@ -6,4 +6,4 @@ deploy_bindplane_controlplane    = false
 deploy_bindplane_cloud_bootstrap = false
 
 deploy_embedded_collector = true
-external_otlp_endpoint    = null
+otel_collector_endpoint   = null

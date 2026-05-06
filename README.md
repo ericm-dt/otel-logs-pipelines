@@ -60,7 +60,7 @@ Edit `terraform.tfvars`. The file is organized into clear sections — the top *
 | `bindplane_provider_api_key` | Bindplane Cloud API key |
 | `dt_tenant_url` | Dynatrace tenant base URL (environment ID is derived from this) |
 | `dt_api_token` | Dynatrace API token |
-| `external_otlp_endpoint` | In-cluster OTLP endpoint of the Bindplane-managed collector (set after phase 2) |
+| `otel_collector_endpoint` | In-cluster OTLP endpoint of the Bindplane-managed collector (set after phase 2) |
 
 The **PHASE-CONTROLLED TOGGLES** section at the bottom of `terraform.tfvars` is shown for reference only — do not edit those values manually. They are overridden by the phase overlay files described in section 4.
 
@@ -83,7 +83,8 @@ The build is broken down into three phases:
 | Phase overlay | `deploy_otel_demo` | `deploy_bindplane_controlplane` | `deploy_embedded_collector` | Purpose |
 | --- | --- | --- | --- | --- |
 | `phases/01-infra.tfvars` | `false` | `false` | `true` | EKS infrastructure only |
-| `phases/02-controlplane.tfvars` | `false` | `true` | `true` | Adds Bindplane Cloud pipeline resources |
+| `phases/02a-bindplane.tfvars` | `false` | `true` | `true` | Adds Bindplane Cloud pipeline resources |
+| `phases/02b-bootstrap-collector.tfvars` | `false` | `true` | `true` | Applies the Bindplane Cloud collector bootstrap manifest |
 | `phases/03-demo-external-collector.tfvars` | `true` | `true` | `false` | Deploys OTel demo apps routed to external collector |
 
 All commands below run from the `terraform/` directory. Create the plans folder once:
@@ -116,47 +117,90 @@ This phase creates the Bindplane OTLP source, Dynatrace destination, and collect
 ```bash
 terraform plan \
   -var-file=terraform.tfvars \
-  -var-file=phases/02-controlplane.tfvars \
-  -out=plans/02-controlplane.tfplan
-terraform apply plans/02-controlplane.tfplan
+  -var-file=phases/02a-bindplane.tfvars \
+  -out=plans/02a-bindplane.tfplan
+terraform apply plans/02a-bindplane.tfplan
 ```
 
 ### Bootstrap collectors into the cluster
 
-Bindplane Cloud needs at least one collector running in the cluster before it can route telemetry. Two options:
+Bindplane Cloud needs at least one collector running in the cluster before it can route telemetry. This is a separate step because the install manifest is generated from Bindplane Cloud after the control-plane objects exist. Terraform does **not** create the fleet for you. You must create or select a fleet in Bindplane Cloud, make sure that fleet's enrolled collectors match the Terraform-created configuration labels, and then generate the Kubernetes install manifest from Bindplane Cloud.
+
+Make sure you get the configuration name from the terraform output (It should still be visible but run again if you closed your shell):
+```bash
+terraform output
+```
+
+Go to Bindplane Cloud and create a fleet using these settings:
+
+- Platform: Kubernetes
+- Agent Type: BDOT 1.x (or the current stable BDOT 1.x release shown in Bindplane Cloud)
+- Platform specifics: Node
+- Fleet name: anything meaningful for your project; using the cluster name is a reasonable default
+- Next:
+	- Choose a configuration (the one created by terraform)
+
+
+Now, Click "Install Agent", choose all the same values that you did for the fleet, and choose the fleet you just created.
+Click "Next" and download the kubernetes manifest
+
+If you choose a different platform or agent family here, the generated install manifest will not match the Kubernetes-based collector deployment this repo expects.
+
+You have two options on how to deploy and manage it:
 
 **Option A — Terraform-managed (recommended):**
 
-1. In Bindplane Cloud, generate the Kubernetes collector install manifest.
-2. Save it to `terraform/bindplane-agent-bootstrap.yaml`.
-3. In your `terraform.tfvars`, the path is already set to `"./bindplane-agent-bootstrap.yaml"` — confirm it matches where you saved the file.
-4. Re-run phase 2 with bootstrap enabled by temporarily setting `deploy_bindplane_cloud_bootstrap = true` in your `terraform.tfvars`, then re-run the phase 2 plan/apply above.
+1. Save it to `terraform/bindplane-agent.yaml`.
+2. In your `terraform.tfvars`, confirm `bindplane_bootstrap_manifest_path` matches where you saved the file.
+3. Run the bootstrap overlay:
+
+```bash
+terraform plan \
+  -var-file=terraform.tfvars \
+  -var-file=phases/02b-bootstrap-collector.tfvars \
+  -out=plans/02b-bootstrap-collector.tfplan
+terraform apply plans/02b-bootstrap-collector.tfplan
+```
 
 Terraform will run `kubectl apply -f` against the manifest. kubectl must be pointed at the cluster (step 4 kube context).
 
 **Option B — Manual:**
 
-Apply the same Bindplane-generated manifest yourself:
+After creating the fleet and generating the Bindplane manifest, apply the same Bindplane-generated manifest yourself:
 
 ```bash
-kubectl apply -f bindplane-agent-bootstrap.yaml
+kubectl apply -f bindplane-agent.yaml
 ```
 
-Once collectors are running, find the in-cluster OTLP receiver service that Bindplane deployed and set `external_otlp_endpoint` in `terraform.tfvars`. The value follows the pattern `http://<service>.<namespace>.svc.cluster.local:<port>` — look it up with:
+Once collectors are running, find the in-cluster OTLP receiver service that Bindplane deployed and set `otel_collector_endpoint` in `terraform.tfvars`. 
+
+The Kubernetes DNS name for a service follows the pattern:
+```
+http://<SERVICE_NAME>.<NAMESPACE>.svc.cluster.local:<PORT>
+```
+
+List all services to find the Bindplane collector:
 
 ```bash
-kubectl get svc -A | grep -i collector
+kubectl get svc -A
 ```
 
-Find the service exposing port `4317` (gRPC) or `4318` (HTTP) and use it. For example:
+Look for a service in the `bindplane-agent` namespace that exposes port `4318` (HTTP) or `4317` (gRPC). You'll typically see something like:
+
+```
+NAMESPACE         NAME                  TYPE      CLUSTER-IP      PORT(S)
+bindplane-agent   bindplane-node-agent  ClusterIP 10.100.96.180   4317/TCP,4318/TCP
+```
+
+From this, construct your endpoint. For the example above, using HTTP port `4318`:
 
 ```hcl
-external_otlp_endpoint = "http://otel-collector.otel-demo.svc.cluster.local:4318"
+otel_collector_endpoint = "http://bindplane-node-agent.bindplane-agent.svc.cluster.local:4318"
 ```
 
 ## 6. Phase 3: Deploy OTel Demo Apps
 
-With collectors running and `external_otlp_endpoint` set in `terraform.tfvars`:
+With collectors running and `otel_collector_endpoint` set in `terraform.tfvars`:
 
 ```bash
 terraform plan \
@@ -168,9 +212,16 @@ terraform apply plans/03-demo-external-collector.tfplan
 
 This deploys the OTel demo chart with the embedded collector disabled, routing all demo service telemetry to your Bindplane-managed collector endpoint.
 
+At this point, you should have a fully running end-to-end bindplane sandbox!
+
 ## 7. Verify
 
+- check your bindplane cloud to see that data is passing through the pipeline you created.
+- view metrics, logs, and traces in your Dynatrace tenant.
+
 ### Demo frontend
+
+If you want to view the exposed frontend of the otel demo:
 
 ```bash
 kubectl -n otel-demo port-forward svc/frontend-proxy 8080:8080
@@ -178,18 +229,9 @@ kubectl -n otel-demo port-forward svc/frontend-proxy 8080:8080
 
 Open `http://localhost:8080`.
 
-### Kubernetes workload health
 
-```bash
-kubectl -n otel-demo get pods
-kubectl -n otel-demo get daemonset,deployment,statefulset
 ```
 
-### Collector export activity
-
-```bash
-kubectl -n otel-demo logs daemonset/otel-collector-agent --since=10m | \
-  grep -E "otlphttp/dynatrace|Exporting failed|Partial success|401|404"
 ```
 
 Check in Dynatrace that logs, metrics, and traces are arriving from the OTel demo workloads.

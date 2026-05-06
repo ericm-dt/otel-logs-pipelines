@@ -43,6 +43,19 @@ resource "helm_release" "otel_demo" {
     yamlencode(
       merge(
         {
+          # Apply environment variables to all demo service components
+          default = {
+            envOverrides = concat(
+              # Convert simple name-value pairs from otel_collector_env
+              [for name, value in var.otel_collector_env : {
+                name  = name
+                value = value
+              }],
+              # Add any additional default env overrides here
+              []
+            )
+          }
+
           "opentelemetry-collector" = merge(
             {
               enabled = var.deploy_embedded_collector
@@ -79,20 +92,15 @@ resource "helm_release" "otel_demo" {
                 exporters = {}
                 service = {
                   pipelines = {
-                    traces  = { receivers = ["otlp"], exporters = [] }
-                    metrics = { receivers = ["otlp"], exporters = [] }
-                    logs    = { receivers = ["otlp"], exporters = [] }
+                    traces  = { receivers = ["otlp"], processors = ["batch"], exporters = ["otlp"] }
+                    metrics = { receivers = ["otlp"], processors = ["batch"], exporters = ["otlp"] }
+                    logs    = { receivers = ["otlp"], processors = ["batch"], exporters = ["otlp"] }
                   }
                 }
               }
-              # Add extra environment variables: non-sensitive vars directly,
-              # and sensitive Dynatrace credentials via secret references.
+              # Add extra environment variables to the embedded collector
+              # (only used when deploy_embedded_collector=true)
               extraEnvs = concat(
-                # Convert simple name-value pairs from otel_collector_env
-                [for name, value in var.otel_collector_env : {
-                  name  = name
-                  value = value
-                }],
                 # Add Dynatrace credentials from the kubernetes secret if created
                 var.deploy_embedded_collector && var.dt_tenant_url != null ? [
                   {
@@ -113,7 +121,9 @@ resource "helm_release" "otel_demo" {
                       }
                     }
                   }
-                ] : []
+                ] : [],
+                # Add any additional collector env vars here
+                []
               )
             },
             { config = var.otel_collector_config }
@@ -131,32 +141,20 @@ resource "helm_release" "otel_demo" {
               }
             }
           }
-        },
-        var.external_otlp_endpoint != null ? {
-          # Point all demo services at a Bindplane-managed (or otherwise external)
-          # collector endpoint when the embedded collector is disabled.
-          default = {
-            env = [
-              {
-                name  = "OTEL_EXPORTER_OTLP_ENDPOINT"
-                value = var.external_otlp_endpoint
-              }
-            ]
-          }
-        } : {}
+        }
       )
     )
   ]
 
-  wait    = true
+  wait    = false
   timeout = 600
 
   lifecycle {
     precondition {
       condition = !(var.deploy_otel_demo && !var.deploy_embedded_collector) || (
-        var.external_otlp_endpoint != null || var.deploy_bindplane_cloud_bootstrap
+        var.otel_collector_endpoint != null || var.deploy_bindplane_cloud_bootstrap
       )
-      error_message = "When deploy_otel_demo=true and deploy_embedded_collector=false, set external_otlp_endpoint or enable deploy_bindplane_cloud_bootstrap."
+      error_message = "When deploy_otel_demo=true and deploy_embedded_collector=false, set otel_collector_endpoint or enable deploy_bindplane_cloud_bootstrap."
     }
   }
 
