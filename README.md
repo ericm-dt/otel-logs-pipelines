@@ -2,7 +2,7 @@
 
 Deploy an AWS EKS cluster and run the OpenTelemetry Demo with a Bindplane Cloud-managed collector pipeline shipping telemetry to Dynatrace.
 
-This doesn't install any processors or connectors, just the bare minimun to get started with Bindplane and Dynatrace.
+This doesn't install any processors or connectors, just the bare minimum to get started with Bindplane and Dynatrace.
 
 ## What This Repo Deploys
 
@@ -11,8 +11,8 @@ The Terraform in `terraform/` manages:
 1. EKS cluster + node group + IAM
 2. VPC/subnets in one of three networking modes
 3. Bindplane Cloud control-plane objects (OTLP source, Dynatrace destination, collector configuration)
-4. Optional Bindplane Cloud collector bootstrap (applies Bindplane-generated Kubernetes manifest via kubectl)
-5. OTel Demo Helm release with external collector routing
+4. Bindplane Cloud collector agents (applies Bindplane-generated Kubernetes manifest via kubectl)
+5. OTel Demo Helm release with embedded collector exporting to Bindplane
 6. Dynatrace credentials as a Kubernetes Secret (never in Helm values or plan output)
 
 ## Prerequisites
@@ -67,15 +67,17 @@ Edit `terraform.tfvars`. The file is organized into clear sections — the top *
 | `dt_tenant_url` | Dynatrace tenant base URL (environment ID is derived from this) |
 | `dt_api_token` | Dynatrace API token |
 
+The `otel_collector_config` variable in `terraform.tfvars` is pre-configured with an OTLP exporter that sends to the Bindplane service. You typically don't need to modify this unless you want to customize the embedded collector's pipeline.
+
 The **PHASE-CONTROLLED TOGGLES** section at the bottom of `terraform.tfvars` is shown for reference only — do not edit those values manually. They are overridden by the phase overlay files described in section 4.
 
 ### Networking mode
 
 Choose one networking mode in `terraform.tfvars`:
 
-1. **Default VPC + existing subnets** (default): leave all four networking vars `null`.  This will simply deploy your K8s cluster into the default public and priveate subnets of the AWS account.
-2. **Existing/default VPC + dedicated project subnets**: Use an exising VPC (leave VPC `null` to use the default VPC).  Choose and available CIDR for both the public and private subnets you want to create for your cluster.  Set `public_subnet_cidrs` and `private_subnet_cidrs`
-3. **New custom VPC**: set `vpc_cidr` (subnets auto-derived if not set)
+1. **Default VPC + existing subnets** (default): leave all four networking vars `null`. The cluster will use your AWS account's default VPC and automatically select existing subnets.
+2. **Existing/default VPC + dedicated project subnets**: Use an existing VPC (leave `vpc_cidr` as `null` to use the default VPC). Set `public_subnet_cidrs` and `private_subnet_cidrs` to create new subnets with your chosen CIDR blocks for this cluster.
+3. **New custom VPC**: set `vpc_cidr` to create a new VPC (subnets auto-derived if `public_subnet_cidrs` and `private_subnet_cidrs` are not specified).
 
 Node group is placed on public subnets in modes 1 and 2. NAT gateway is only created for mode 3.
 
@@ -92,10 +94,15 @@ The build is broken down into three phases:
 | `phases/02b-bootstrap-collector.tfvars` | `false` | `true` | `true` | Applies the Bindplane Cloud collector bootstrap manifest, deploying the agents according to the config on Bindplane cloud  |
 | `phases/03-demo-external-collector.tfvars` | `true` | `true` | `true` | Deploys OTel demo with embedded collector exporting to Bindplane |
 
-All commands below run from the `terraform/` directory. 
+**Note:** `deploy_embedded_collector` is always `true` because this repo uses the OTel Demo's built-in collector (vs. an external standalone collector). It only takes effect when the demo is deployed in phase 3.
 
-Create a folder to store the terraform plans for each step:
+All terraform commands below should be run from inside the `terraform/` directory:
 
+```bash
+cd terraform
+```
+
+Create the direcory to store the terraform plans:
 ```bash
 mkdir -p plans
 ```
@@ -108,7 +115,7 @@ terraform plan \
 ```
 The plan will be calculated and written to disk.
 
-Apply it to crate the resources:
+Apply it to create the resources:
 ```bash
 terraform apply plans/01-infra.tfplan
 ```
@@ -139,26 +146,31 @@ terraform apply plans/02a-bindplane.tfplan
 
 ### Bootstrap collectors into the cluster
 
-Now, we'll create a fleet in Bindplane and export a kubernetes manifest to create the Bindplane agents.
+Bindplane Cloud requires a **fleet** to manage collectors. Fleets cannot be created via Terraform (no `bindplane_fleet` resource exists), so you'll create one manually in the UI and download the generated Kubernetes manifest.
 
-Make sure you get the configuration name from the terraform output (It should still be visible from the apply output, but run again if you closed your shell):
+First, get your configuration name from Terraform output:
 ```bash
-terraform output
+terraform output bindplane_configuration_name
 ```
 
 Go to Bindplane Cloud and create a fleet using these settings:
 
-- Platform: Kubernetes
-- Agent Type: BDOT 1.x (or the current stable)
-- Platform specifics: Node
-- Fleet name: anything meaningful for your project; cluster name, etc.
-- Click "Next" ->
-	- Choose a configuration (the one created by terraform)
+- Platform: **Kubernetes**
+- Agent Type: **BDOT 1.x** (or the current stable version)
+- Platform specifics: **Node** (DaemonSet deployment)
+- Fleet name: anything meaningful for your project (e.g., your cluster name)
+- Click **Next**
+- Choose the configuration created by Terraform (use the name from the output above)
 
+After creating the fleet, download the Kubernetes manifest:
 
-Now, Click "Install Agent", choose all the same values that you did for the fleet, and choose the fleet you just created.
-
-Click "Next" and download the kubernetes manifest
+1. Click **"Install Agent"** in the Bindplane UI
+2. Choose the same platform settings:
+   - Platform: Kubernetes
+   - Agent Type: BDOT 1.x
+   - Platform specifics: Node
+3. Select the fleet you just created
+4. Click **Next** and download the generated `bindplane-agent.yaml` manifest
 
 If you choose a different platform or agent family here, the generated install manifest will not match the Kubernetes-based collector deployment this repo expects.
 
@@ -192,6 +204,10 @@ kubectl apply -f bindplane-agent.yaml
 ```
 Same net effect, but terraform will not be aware of the state.
 
+
+**Validate that the manifest was applied **
+
+
 Once collectors are running, verify they're healthy:
 
 ```bash
@@ -199,8 +215,6 @@ kubectl get pods -n bindplane-agent
 ```
 
 You should see DaemonSet pods (typically 1 per node) in Running status. The Bindplane collectors are now ready to receive telemetry from the demo application.
-
-Note: The embedded OTel demo collector is automatically configured in `terraform.tfvars` (via `otel_collector_config`) to export to the Bindplane service at `bindplane-node-agent.bindplane-agent.svc.cluster.local:4317` using gRPC.
 
 ## 6. Phase 3: Deploy OTel Demo Apps
 
@@ -217,7 +231,14 @@ terraform plan \
 terraform apply plans/03-demo-external-collector.tfplan
 ```
 
-This deploys the OTel demo chart with its embedded collector configured to export all telemetry to your Bindplane-managed collector. The demo services send telemetry to their local embedded collector (default behavior), which then forwards everything to Bindplane via the OTLP exporter.
+This deploys the OTel demo chart with its embedded collector configured to export all telemetry to your Bindplane-managed collectors.
+
+**How telemetry flows:**
+1. Demo services → embedded OTel collector (sidecar within the demo)
+2. Embedded collector → Bindplane agents at `bindplane-node-agent.bindplane-agent.svc.cluster.local:4317` (gRPC)
+3. Bindplane agents → Dynatrace
+
+The embedded collector's OTLP exporter is configured in `terraform.tfvars` via the `otel_collector_config` variable.
 
 ## 7. Verify
 
@@ -243,16 +264,22 @@ Open `http://localhost:8080`.
 
 
 **You now have a working end-to-end telemetry pipeline!** 
-Feel free to add any components to you configuration (processors, connectors, etc) to refine your telemetry data!
+Feel free to add any components to your configuration (processors, connectors, etc) to refine your telemetry data!
 
 ## 8. Clean Up
 
-When you want to clean everything up:
+To tear down all resources created by Terraform, use the same phase overlay as your last apply:
+
 ```bash
-terraform destroy
+terraform destroy -var-file=terraform.tfvars -var-file=phases/03-demo-external-collector.tfvars
 ```
 
-If the S3 backend is shared, keep the state bucket but confirm all cluster and network resources are removed.
+**Note:** If you manually applied the Bindplane manifest (Option B in Phase 2b), you'll need to manually delete it:
+```bash
+kubectl delete -f bindplane-agent.yaml
+```
+
+The Bindplane Cloud **fleet** and any manually created resources in the Bindplane UI are not managed by Terraform and won't be deleted automatically.
 
 ---
 
@@ -260,7 +287,7 @@ If the S3 backend is shared, keep the state bucket but confirm all cluster and n
 
 ### Dynatrace configuration notes
 
-Both the embedded collector and the Bindplane-managed collector send telemetry to:
+The Bindplane-managed collectors send telemetry to Dynatrace at:
 
 ```text
 <dt_tenant_url>/api/v2/otlp

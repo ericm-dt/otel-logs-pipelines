@@ -12,7 +12,7 @@
 
 # AWS / Cluster
 region             = "us-east-1"
-cluster_name       = "otel-demo-cluster"
+cluster_name       = "my-bindplane-sandbox" #must be unique in your AWS account/region!
 kubernetes_version = "1.33"
 
 # Node group sizing
@@ -21,11 +21,11 @@ instance_type = "t3.large"
 disk_size_gb  = 50
 
 # Networking
-# Mode A (default): use default VPC + existing subnets
-# vpc_cidr = null
-# existing_vpc_id = null
-# public_subnet_cidrs = null
-# private_subnet_cidrs = null
+Mode A (default): use default VPC + existing subnets
+vpc_cidr = null
+existing_vpc_id = null
+public_subnet_cidrs = null
+private_subnet_cidrs = null
 
 # Mode B: use default (or existing_vpc_id) VPC + create dedicated project subnets
 # existing_vpc_id      = null
@@ -33,10 +33,10 @@ disk_size_gb  = 50
 # private_subnet_cidrs = ["172.31.110.0/24", "172.31.111.0/24"]
 
 # Mode C: create new VPC (subnets auto-derived if not set)
-vpc_cidr             = null
-existing_vpc_id      = null
-public_subnet_cidrs  = null
-private_subnet_cidrs = null
+# vpc_cidr             = null
+# existing_vpc_id      = null
+# public_subnet_cidrs  = null
+# private_subnet_cidrs = null
 
 # Bindplane Cloud provider connectivity/auth.
 # Required when deploy_bindplane_controlplane=true in phase overlays.
@@ -49,8 +49,7 @@ bindplane_provider_password = null
 # Set true only for test environments with self-signed certs.
 bindplane_provider_tls_skip_verify = false
 
-# Optional Bindplane Cloud agent manifest path.
-# Used only if a phase overlay enables deploy_bindplane_cloud_bootstrap.
+# Bindplane Cloud agent manifest path.
 bindplane_bootstrap_manifest_path = "./bindplane-agent.yaml"
 
 # OTel demo Helm release
