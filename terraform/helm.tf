@@ -149,14 +149,5 @@ resource "helm_release" "otel_demo" {
   wait    = false
   timeout = 600
 
-  lifecycle {
-    precondition {
-      condition = !(var.deploy_otel_demo && !var.deploy_embedded_collector) || (
-        var.otel_collector_endpoint != null || var.deploy_bindplane_cloud_bootstrap
-      )
-      error_message = "When deploy_otel_demo=true and deploy_embedded_collector=false, set otel_collector_endpoint or enable deploy_bindplane_cloud_bootstrap."
-    }
-  }
-
   depends_on = [aws_eks_node_group.primary]
 }

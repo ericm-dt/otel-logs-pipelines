@@ -53,21 +53,33 @@ bindplane_provider_tls_skip_verify = false
 # Used only if a phase overlay enables deploy_bindplane_cloud_bootstrap.
 bindplane_bootstrap_manifest_path = "./bindplane-agent.yaml"
 
-# Set this to the service url of the collector deployed by bindplane.
-# Example: "http://bindplane-node-agent.bindplane-agent.svc.cluster.local:4318"
-otel_collector_endpoint = null
-
 # OTel demo Helm release
 otel_demo_namespace     = "otel-demo"
 otel_demo_chart_version = "0.40.5"
 
-# Optional embedded collector customization.
-# Leave empty for the embedded collector path.
-# When using external collector (Bindplane), set the endpoint here:
-# otel_collector_env = {
-#   "OTEL_COLLECTOR_NAME" = "<service>.<namespace>.svc.cluster.local"
-# }
+# Optional environment variable overrides for demo services.
+# Leave empty to use chart defaults.
 otel_collector_env = {}
+
+# Embedded collector configuration - exports to Bindplane collector
+# The demo's embedded collector forwards all telemetry to Bindplane.
+otel_collector_config = {
+  exporters = {
+    otlp = {
+      endpoint = "bindplane-node-agent.bindplane-agent.svc.cluster.local:4317"
+      tls = {
+        insecure = true
+      }
+    }
+  }
+  service = {
+    pipelines = {
+      traces  = { exporters = ["otlp", "otlp/jaeger", "spanmetrics"] }
+      metrics = { exporters = ["otlp", "otlphttp/prometheus"] }
+      logs    = { exporters = ["otlp", "opensearch"] }
+    }
+  }
+}
 
 # Dynatrace credentials used by embedded collector path.
 # Required when deploy_otel_demo=true and deploy_embedded_collector=true.
@@ -113,7 +125,8 @@ bindplane_helm_values = {
 # =============================================================================
 # These values are shown for clarity only. They are overridden by:
 # - phases/01-infra.tfvars
-# - phases/02-controlplane.tfvars
+# - phases/02a-bindplane.tfvars
+# - phases/02b-bootstrap-collector.tfvars
 # - phases/03-demo-external-collector.tfvars
 
 deploy_otel_demo                 = false

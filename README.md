@@ -60,7 +60,6 @@ Edit `terraform.tfvars`. The file is organized into clear sections — the top *
 | `bindplane_provider_api_key` | Bindplane Cloud API key |
 | `dt_tenant_url` | Dynatrace tenant base URL (environment ID is derived from this) |
 | `dt_api_token` | Dynatrace API token |
-| `otel_collector_endpoint` | In-cluster OTLP endpoint of the Bindplane-managed collector (set after phase 2) |
 
 The **PHASE-CONTROLLED TOGGLES** section at the bottom of `terraform.tfvars` is shown for reference only — do not edit those values manually. They are overridden by the phase overlay files described in section 4.
 
@@ -85,7 +84,7 @@ The build is broken down into three phases:
 | `phases/01-infra.tfvars` | `false` | `false` | `true` | EKS infrastructure only |
 | `phases/02a-bindplane.tfvars` | `false` | `true` | `true` | Adds Bindplane Cloud pipeline resources |
 | `phases/02b-bootstrap-collector.tfvars` | `false` | `true` | `true` | Applies the Bindplane Cloud collector bootstrap manifest |
-| `phases/03-demo-external-collector.tfvars` | `true` | `true` | `false` | Deploys OTel demo apps routed to external collector |
+| `phases/03-demo-external-collector.tfvars` | `true` | `true` | `true` | Deploys OTel demo with embedded collector exporting to Bindplane |
 
 All commands below run from the `terraform/` directory. Create the plans folder once:
 
@@ -172,35 +171,19 @@ After creating the fleet and generating the Bindplane manifest, apply the same B
 kubectl apply -f bindplane-agent.yaml
 ```
 
-Once collectors are running, find the in-cluster OTLP receiver service that Bindplane deployed and set `otel_collector_endpoint` in `terraform.tfvars`. 
-
-The Kubernetes DNS name for a service follows the pattern:
-```
-http://<SERVICE_NAME>.<NAMESPACE>.svc.cluster.local:<PORT>
-```
-
-List all services to find the Bindplane collector:
+Once collectors are running, verify they're healthy:
 
 ```bash
-kubectl get svc -A
+kubectl get pods -n bindplane-agent
 ```
 
-Look for a service in the `bindplane-agent` namespace that exposes port `4318` (HTTP) or `4317` (gRPC). You'll typically see something like:
+You should see DaemonSet pods (typically 1 per node) in Running status. The Bindplane collectors are now ready to receive telemetry from the demo application.
 
-```
-NAMESPACE         NAME                  TYPE      CLUSTER-IP      PORT(S)
-bindplane-agent   bindplane-node-agent  ClusterIP 10.100.96.180   4317/TCP,4318/TCP
-```
-
-From this, construct your endpoint. For the example above, using HTTP port `4318`:
-
-```hcl
-otel_collector_endpoint = "http://bindplane-node-agent.bindplane-agent.svc.cluster.local:4318"
-```
+Note: The embedded OTel demo collector is automatically configured in `terraform.tfvars` (via `otel_collector_config`) to export to the Bindplane service at `bindplane-node-agent.bindplane-agent.svc.cluster.local:4317` using gRPC.
 
 ## 6. Phase 3: Deploy OTel Demo Apps
 
-With collectors running and `otel_collector_endpoint` set in `terraform.tfvars`:
+With Bindplane collectors running:
 
 ```bash
 terraform plan \
@@ -210,7 +193,7 @@ terraform plan \
 terraform apply plans/03-demo-external-collector.tfplan
 ```
 
-This deploys the OTel demo chart with the embedded collector disabled, routing all demo service telemetry to your Bindplane-managed collector endpoint.
+This deploys the OTel demo chart with its embedded collector configured to export all telemetry to your Bindplane-managed collector. The demo services send telemetry to their local embedded collector (default behavior), which then forwards everything to Bindplane via the OTLP exporter.
 
 At this point, you should have a fully running end-to-end bindplane sandbox!
 

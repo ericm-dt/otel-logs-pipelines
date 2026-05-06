@@ -94,12 +94,6 @@ variable "deploy_embedded_collector" {
   default     = true
 }
 
-variable "otel_collector_endpoint" {
-  description = "Optional OTLP endpoint used by demo services when deploy_embedded_collector is false (for example, http://otel-collector.otel-demo.svc.cluster.local:4318)."
-  type        = string
-  default     = null
-}
-
 variable "deploy_bindplane_server" {
   description = "Whether to deploy a self-hosted Bindplane server via Helm. Leave false when using Bindplane Cloud."
   type        = bool
