@@ -222,10 +222,15 @@ This deploys the OTel demo chart with its embedded collector configured to expor
 ## 7. Verify
 
 ### Bindplane
-check your configuration in Bindplane Cloud to see that data is passing through the pipeline you created.
+Check your configuration in Bindplane Cloud to see that data is passing through the pipeline you created:
+
+![Bindplane Configuration](docs/images/bindplante_config_success.png)
 
 ### Dynatrace
-view metrics, logs, and traces in your Dynatrace tenant.
+You should see all of the services and telemetry data you'd expect from the otel demo in Dynatrace:
+
+![Dynatrace Logs](docs/images/dynatrace_otel_logs.png)
+![Dynatrace Services](docs/images/dynatrace_services.png)
 
 ### Otel Demo (Astronomy Shop) frontend
 If you want to view the exposed frontend of the otel demo, or to click through to generate specific telemetry use cases:
