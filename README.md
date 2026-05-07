@@ -2,16 +2,18 @@
 
 A bootsrapped Bindplane pipeline that ships from the Otel Demo to Dynatrace.
 
-## What This Repo Deploys
+This repo uses Terraform to create and manage:
 
-The Terraform in `terraform/` manages:
+- A Kubernetes cluster and all the associated hyperscaler resources (networking, IAM, etc)
+- A Bindplane telemetry pipeline that ships to a Dynatrace tenant; both the cloud configurations as well as the K8s resources (agents, configurations, etc)
+- The OpenTelemetry Demo, configured to export to the Bindplane pipleline.
 
-1. EKS cluster + node group + IAM
-2. VPC/subnets in one of three networking modes
-3. Bindplane Cloud control-plane objects (OTLP source, Dynatrace destination, collector configuration)
-4. Bindplane Cloud collector agents (applies Bindplane-generated Kubernetes manifest via kubectl)
-5. OTel Demo Helm release with embedded collector exporting to Bindplane
-6. Dynatrace credentials as a Kubernetes Secret (never in Helm values or plan output)
+## High-level oveview
+1. Create the hyperscaler resources (K8 cluster)
+2. Create the Bindplate cloud configuration
+3. Download the agent configuration (K8s manifest) from Bindplane and apply it to the cluster
+4. Deploy the Otel demo to the cluster
+5. Do all kinds of fun and create stuff to your telemetry data in Bindplane!
 
 ## Prerequisites
 
@@ -26,8 +28,6 @@ The Terraform in `terraform/` manages:
 
 ## 1. Configure Terraform Backend
 
-S3 is the preferred backend for any use beyond a single quick run — it keeps state safe if you lose your local directory or move machines.
-
 **Option A — S3 (recommended):**
 
 Create an S3 bucket and edit a copy of the backend.vars file:
@@ -40,13 +40,13 @@ terraform init -backend-config=backend.tfvars
 
 **Option B — local state (no S3 required):**
 
-Stores your state locally.
+Stores your state locally.  If you lose the state file, delete the directory (aggressive git cleanup, etc), switch machines, you will have orphaned AWS resources scattered about.
 
 ```bash
 terraform init -backend=false
 ```
 
-State is written to `terraform.tfstate` in the working directory. No source files need to be changed. If you later want to move to S3, run `terraform init -migrate-state -backend-config=backend.tfvars`.
+State is written to `terraform.tfstate` in the working directory. If you later want to move to S3, run `terraform init -migrate-state -backend-config=backend.tfvars`.
 
 ## 2. Configure Deployment Variables
 
@@ -85,14 +85,13 @@ This repo uses phase overlay files in `terraform/phases/` to control deployment-
 
 The build is broken down into three phases:
 
-| Phase overlay | `deploy_otel_demo` | `deploy_bindplane_controlplane` | `deploy_embedded_collector` | Purpose |
-| --- | --- | --- | --- | --- |
-| `phases/01-infra.tfvars` | `false` | `false` | `true` | Create AWS infrastructure only (EC2, EKS, subnets, IAM, etc) |
-| `phases/02a-bindplane.tfvars` | `false` | `true` | `true` | Create Bindplane cloud resources  |
-| `phases/02b-bootstrap-collector.tfvars` | `false` | `true` | `true` | Applies the Bindplane Cloud collector bootstrap manifest, deploying the agents according to the config on Bindplane cloud  |
-| `phases/03-demo-external-collector.tfvars` | `true` | `true` | `true` | Deploys OTel demo with embedded collector exporting to Bindplane |
+| Phase overlay | Description |
+| --- | --- |
+| `phases/01-infra.tfvars` |  Create AWS infrastructure only (EC2, EKS, subnets, IAM, etc) |
+| `phases/02a-bindplane.tfvars` |  Create Bindplane cloud resources  |
+| `phases/02b-bootstrap-collector.tfvars` | Applies the Bindplane Cloud collector bootstrap manifest, deploying the agents according to the config on Bindplane cloud  |
+| `phases/03-demo-external-collector.tfvars` | Deploys OTel demo with embedded collector exporting to Bindplane |
 
-**Note:** `deploy_embedded_collector` is always `true` because this repo uses the OTel Demo's built-in collector (vs. an external standalone collector). It only takes effect when the demo is deployed in phase 3.
 
 All terraform commands below should be run from inside the `terraform/` directory:
 
@@ -109,7 +108,9 @@ mkdir -p plans
 
 ```bash
 terraform plan \
-  -var-file=terraform.tfvars -var-file=phases/01-infra.tfvars -out=plans/01-infra.tfplan
+  -var-file=terraform.tfvars \
+  -var-file=phases/01-infra.tfvars \
+  -out=plans/01-infra.tfplan
 ```
 The plan will be calculated and written to disk.
 
@@ -122,7 +123,8 @@ This should take about 15-20 minutes
 
 
 Once complete, configure your local kube context:
-(also should be output by terraform after `apply` is done)
+(also should be output by terraform after `apply` is done).  `context_alias` is just a shortcut name for your own convenience.
+
 ```bash
 aws eks update-kubeconfig --region <region> --name <cluster_name> --alias <context_alias>
 kubectl config use-context <context_alias>
@@ -144,7 +146,7 @@ terraform apply plans/02a-bindplane.tfplan
 
 ### Bootstrap collectors into the cluster
 
-Bindplane Cloud requires a **fleet** to manage collectors. Fleets cannot be created via Terraform (no `bindplane_fleet` resource exists), so you'll create one manually in the UI and download the generated Kubernetes manifest.
+Bindplane Cloud requires a **fleet** to manage collectors. 
 
 First, get your configuration name from Terraform output:
 ```bash
@@ -156,21 +158,19 @@ Go to Bindplane Cloud and create a fleet using these settings:
 - Platform: **Kubernetes**
 - Agent Type: **BDOT 1.x** (or the current stable version)
 - Platform specifics: **Node** (DaemonSet deployment)
-- Fleet name: anything meaningful for your project (e.g., your cluster name)
+- Fleet name: anything meaningful for your project - it's not used elsewhere.
 - Click **Next**
 - Choose the configuration created by Terraform (use the name from the output above)
 
-After creating the fleet, download the Kubernetes manifest:
+After creating the fleet, create and download the Kubernetes manifest:
 
 1. Click **"Install Agent"** in the Bindplane UI
-2. Choose the same platform settings:
+2. Choose the same platform settings (they **must** match what you chose for the fleet):
    - Platform: Kubernetes
    - Agent Type: BDOT 1.x
    - Platform specifics: Node
 3. Select the fleet you just created
 4. Click **Next** and download the generated `bindplane-agent.yaml` manifest
-
-If you choose a different platform or agent family here, the generated install manifest will not match the Kubernetes-based collector deployment this repo expects.
 
 You have two options on how to deploy and manage it:
 
